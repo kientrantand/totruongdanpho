@@ -23,8 +23,8 @@ const GIS_BASE = 'https://raw.githubusercontent.com/thanglequoc/vietnamese-provi
 
 const S = {
   user: GUEST, leaders: [], overview: null, mapFeatures:[], mapStatus:'loading', view:'directory', q:'', ward:'', sort:'area',
-  votedOnly: false, selected: null, draftVote: null, authRole:'voter', loginError:'',
-  adminSection: 'leaders', adminLeaders:[], participants:[], createdCodes:[],
+  votedOnly: false, selected: null, draftVote: null, authRole:'admin', loginError:'',
+  adminSection: 'leaders', adminLeaders:[],
   editLeader:null, isSaving:false, rankings:{easy:[],difficult:[],minimum_votes:5},
   comments:[],commentDraft:'',commentTotal:0,adminComments:[]
 };
@@ -79,7 +79,6 @@ async function loadMain(){
 async function loadAdmin(){
   if(S.user?.role!=='admin')return;
   if(S.adminSection==='leaders')S.adminLeaders=(await req('/api/admin/leaders')).leaders;
-  else if(S.adminSection==='participants')S.participants=(await req('/api/admin/participants')).participants;
   else S.adminComments=(await req('/api/admin/comments')).comments;
 }
 async function bootstrap(){
@@ -140,23 +139,15 @@ function mapView(){
  return `<section class="map-main" aria-label="Bản đồ chọn phường"><div class="map-head"><div><div class="map-kicker">BẢN ĐỒ TRA CỨU · NAM ĐỊNH</div><h2>Chọn phường để xem tổ trưởng</h2><p>6 phường thuộc tỉnh Ninh Bình · Không bao gồm Hồng Quang và Vị Khê</p></div><button class="map-reset" data-action="map-all">${icon('pin',16)} Tất cả phường</button></div><div class="map-body"><div class="map-graphic">${S.mapFeatures.length?`<svg viewBox="0 0 1000 610" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Bản đồ tương tác 6 phường">${mapShapes()}</svg>`:`<div class="map-fallback">${icon('pin',44)}<strong>${S.mapStatus==='loading'?'Đang dựng bản đồ…':'Chọn phường để tra cứu'}</strong><span>${status}</span></div>`}<div class="map-credit">${status}</div></div><div class="map-chooser"><div class="map-chooser-title">DANH SÁCH 6 PHƯỜNG</div>${chips}<p class="map-hint">${S.ward?`Đang xem: <b>${e(S.ward)}</b>`:'Chạm vào ranh giới trên bản đồ hoặc tên phường.'}</p></div></div><div class="map-attr">Dữ liệu địa giới: thanglequoc/vietnamese-provinces-database (MIT); tham chiếu bản đồ sáp nhập của NXB Tài nguyên Môi trường và Bản đồ Việt Nam. Bản đồ phục vụ tra cứu.</div></section>`;
 }
 function loginView(){
-return `<div class="login-shell">
-<section class="login-showcase">
-  <div class="login-logo"><span class="logo-symbol">✦</span><span>TỔ PHỐ <span style="opacity:.55">/</span> BÌNH CHỌN</span></div>
-  <div class="showcase-text"><h1>Mỗi đánh giá,<br>một góc nhìn.</h1>
-    <p>Không gian bình chọn nội bộ dành cho việc ghi nhận trải nghiệm phối hợp với các tổ trưởng dân phố trên địa bàn tỉnh Ninh Bình.</p>
-    <div class="sample-chart"><div style="display:flex;justify-content:space-between;align-items:center;font-size:.89rem"><b>Minh họa 4 mức bình chọn</b>${icon('chart',19)}</div>
-    <div class="sample-rows"><div class="sample-line"><span style="width:38%;background:#71dbc2"></span><span style="width:34%;background:#9ad1ef"></span><span style="width:19%;background:#f6c57d"></span><span style="width:9%;background:#f89e9e"></span></div>
-    <div style="display:flex;gap:11px;flex-wrap:wrap;font-size:.73rem;color:#f0f4ff"><span>● Dễ tính</span><span>● Bình thường</span><span>● Thất thường</span><span>● Gây khó khăn</span></div></div></div>
-  </div><div class="showcase-footer">Dữ liệu bình chọn được lưu riêng trên máy chủ · Không công khai danh sách người bình chọn</div>
-</section>
-<section class="login-main"><div class="login-card"><div class="login-tag">CHÀO MỪNG TRỞ LẠI</div><h2>Truy cập hệ thống</h2><p>Nhập mã bình chọn do quản trị viên cấp để tham gia hoặc xem kết quả.</p>
-<button class="btn btn-ghost" data-action="guest" style="margin-bottom:14px">← Xem bản đồ không đăng nhập</button><div class="tabs"><button type="button" data-action="authrole" data-value="voter" class="${S.authRole==='voter'?'active':''}">Người bình chọn</button><button type="button" data-action="authrole" data-value="admin" class="${S.authRole==='admin'?'active':''}">Quản trị viên</button></div>
-<form id="login-form"><div class="form-field"><label for="code">${S.authRole==='voter'?'Mã bình chọn':'Mật khẩu quản trị'}</label><input id="code" name="code" ${S.authRole==='admin'?'type="password"':'type="text"'} autocomplete="off" placeholder="${S.authRole==='voter'?'Ví dụ: TDP-XXXXXXXXXX':'Nhập mật khẩu quản trị'}" required autofocus></div>
+return `<div class="login-shell"><section class="login-showcase"><div class="login-logo">✦ TỔ PHỐ / BÌNH CHỌN</div>
+<div class="showcase-text"><h1>Quản trị hệ thống</h1><p>Đăng nhập chỉ dành cho người quản trị duyệt bình luận và quản lý danh sách tổ trưởng.</p></div>
+<div class="showcase-footer">Người dân bình chọn và bình luận ẩn danh không cần đăng nhập.</div></section>
+<section class="login-main"><div class="login-card"><div class="login-tag">QUẢN TRỊ VIÊN</div><h2>Đăng nhập quản trị</h2>
+<button class="btn btn-ghost" data-action="guest" style="margin-bottom:14px">← Trở về trang bình chọn</button>
+<form id="login-form"><div class="form-field"><label for="code">Mật khẩu quản trị</label><input id="code" name="code" type="password" autocomplete="current-password" placeholder="Nhập mật khẩu quản trị" required autofocus></div>
 ${S.loginError?`<div class="error-msg">${e(S.loginError)}</div>`:''}
-<button class="btn btn-primary btn-full" type="submit" style="min-height:48px">Đăng nhập ${icon('arrow',17)}</button></form>
-<div class="login-note">${icon('shield',18)}<span>Mỗi mã bình chọn chỉ được ghi nhận <b>một phiếu trên mỗi tổ trưởng</b>, nhưng có thể cập nhật lựa chọn. Mọi kết quả chỉ mang tính tham khảo, không phải kết luận về cá nhân.</span></div>
-</div></section></div>`;
+<button class="btn btn-primary btn-full" type="submit">Đăng nhập ${icon('arrow',17)}</button></form>
+<div class="login-note">Bình luận công khai phải được quản trị viên duyệt.</div></div></section></div>`;
 }
 function navItem(v, ico, label){return `<button data-action="nav" data-value="${v}" class="${S.view===v?'active':''}">${icon(ico)}<span>${label}</span></button>`;}
 function pageLayout(){
@@ -165,8 +156,8 @@ return `<div class="shell"><aside class="sidebar"><div class="brand-mark"><span 
   <div class="side-caption">KHÔNG GIAN LÀM VIỆC</div><nav class="side-nav" aria-label="Điều hướng">
     ${navItem('directory','people','Danh sách tổ trưởng')}${navItem('results','trophy','Bảng xếp hạng & Kết quả')}
     ${S.user.role==='admin'?navItem('admin','shield','Quản trị hệ thống'):''}
-  </nav><div class="sidebar-bottom"><div class="account-chip"><div class="avatar">${initial(S.user.label)}</div><div style="min-width:0"><b title="${e(S.user.label)}">${e(S.user.label)}</b><small>${S.user.role==='admin'?'Quản trị viên':S.user.role==='guest'?'Tra cứu công khai':'Người bình chọn'}</small></div></div><button class="logout-btn" data-action="${S.user.role==='guest'?'show-login':'logout'}">${icon('logout',15)} ${S.user.role==='guest'?'Đăng nhập để bình chọn':'Đăng xuất'}</button></div>
-  </aside><main class="main"><header class="topbar"><div class="breadcrumbs">Hệ thống <span>›</span> <b>${titles[S.view]||''}</b></div><div class="topbar-right"><span class="topbar-dot"></span> Không gian đánh giá nội bộ <button class="btn btn-sm btn-ghost" data-action="${S.user.role==='guest'?'show-login':'logout'}" style="color:#7386a5">${S.user.role==='guest'?'Đăng nhập':'Đăng xuất'}</button></div></header>
+  </nav><div class="sidebar-bottom"><div class="account-chip"><div class="avatar">${initial(S.user.label)}</div><div style="min-width:0"><b title="${e(S.user.label)}">${e(S.user.label)}</b><small>${S.user.role==='admin'?'Quản trị viên':S.user.role==='guest'?'Tra cứu công khai':'Khách ẩn danh'}</small></div></div><button class="logout-btn" data-action="${S.user.role==='admin'?'logout':'show-login'}">${icon('logout',15)} ${S.user.role==='admin'?'Đăng xuất':'Quản trị viên'}</button></div>
+  </aside><main class="main"><header class="topbar"><div class="breadcrumbs">Hệ thống <span>›</span> <b>${titles[S.view]||''}</b></div><div class="topbar-right"><span class="topbar-dot"></span> Không gian đánh giá nội bộ <button class="btn btn-sm btn-ghost" data-action="${S.user.role==='admin'?'logout':'show-login'}" style="color:#7386a5">${S.user.role==='admin'?'Đăng xuất':'Quản trị'}</button></div></header>
   <div class="content">${S.view==='directory'?directoryView():S.view==='results'?resultsView():adminView()}
   <div class="fine-print">Phiếu bình chọn phản ánh cảm nhận chủ quan, không phải thông tin xác minh hay kết luận chính thức. Không sử dụng kết quả để bôi nhọ, quy chụp hoặc phát tán thông tin cá nhân.</div></div></main></div>
 ${S.selected?detailModal():''}${S.editLeader!==null?leaderModal():''}`;
@@ -213,19 +204,15 @@ ${miniBar(c,total).replace('mini-chart','mini-chart overall-bar')}
 <div class="card-panel"><div class="section-head"><div><h3>Phân bố tổ trưởng theo phường</h3><p>Danh sách quản lý hiện hành</p></div>${icon('pin',21)}</div>${wards().map(w=>`<div class="ward-row"><b>${e(wardName(w))}</b><div class="line"><span style="width:${S.overview.wards[w]*100/maxWard}%"></span></div><small>${fnum(S.overview.wards[w])} người</small></div>`).join('')}
 <div class="section-head" style="margin-top:30px"><div><h3>Được bình chọn nhiều</h3><p>Sắp xếp theo lượt tham gia, không phải xếp hạng tốt/xấu</p></div></div>${top.length?top.map((x,i)=>`<div class="rank-row"><span class="rank-num">${String(i+1).padStart(2,'0')}</span><div><div class="rank-name">${e(x.name)}</div><div class="muted micro">${e(x.area)} · ${e(wardName(x.ward))}</div></div><div class="rank-side"><b>${fnum(x.votes)}</b> phiếu</div></div>`).join(''):'<div class="notice">Chưa có dữ liệu bình chọn. Kết quả sẽ xuất hiện khi người dùng tham gia.</div>'}</div></div>`;}
 function leaderRows(){const items=S.adminLeaders;return `<div class="table-scroll"><table class="table"><thead><tr><th>Tổ trưởng</th><th>Địa bàn</th><th>Số điện thoại</th><th>Trạng thái</th><th></th></tr></thead><tbody>${items.map(x=>`<tr><td><b>${e(x.name)}</b><small>${e(x.id)}</small></td><td>${e(x.area)}<br><small>${e(x.ward)}</small></td><td>${e(x.phone||'—')}</td><td><span class="badge-status ${x.active?'':'off'}">${x.active?'Đang sử dụng':'Đã ẩn'}</span></td><td class="right"><button class="btn btn-sm" data-action="edit-leader" data-id="${e(x.id)}">${icon('edit',14)} Sửa</button></td></tr>`).join('')}</tbody></table></div>`;}
-function participantsView(){return `<div class="card-panel"><div class="section-head"><div><h3>Cấp mã cho người bình chọn</h3><p>Mỗi người dùng nên có một mã riêng để đảm bảo một phiếu trên một tổ trưởng.</p></div></div><form id="create-invites"><div class="form-grid"><div class="form-field"><label>Tên người hoặc nhóm nhận mã</label><input name="label" placeholder="Ví dụ: Cán bộ A / Nhóm khảo sát" required maxlength="60"></div><div class="form-field"><label>Số mã cần tạo</label><input name="quantity" type="number" min="1" max="50" value="1" required></div></div><button type="submit" class="btn btn-primary">${icon('key',16)} Tạo mã bình chọn</button></form>
-${S.createdCodes.length?`<div class="codes-box"><div class="section-head"><div><h3>Mã vừa tạo</h3><p>Hãy sao chép và gửi riêng cho từng người. Các mã không hiển thị lại sau khi đóng trang.</p></div><button class="btn btn-sm" data-action="copy-all">Sao chép tất cả</button></div>${S.createdCodes.map(c=>`<div class="code-row"><div><b>${e(c.label)}</b><br><code>${e(c.code)}</code></div><button class="btn btn-sm" data-action="copy" data-value="${e(c.code)}">Sao chép</button></div>`).join('')}</div>`:''}
-<div class="section-head" style="margin-top:25px"><div><h3>Người đã được cấp mã</h3><p>Quản trị viên không thể xem lại mã đã phát. Nếu bị lộ, hãy khóa mã và cấp mã mới.</p></div></div>
-<div class="table-scroll"><table class="table"><thead><tr><th>Tài khoản</th><th>Đã bình chọn</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>${S.participants.map(x=>`<tr><td><b>${e(x.label)}</b><small>ID: ${x.id}</small></td><td>${fnum(x.voted)} tổ trưởng</td><td><span class="badge-status ${x.active?'':'off'}">${x.active?'Hoạt động':'Đã khóa'}</span></td><td><button class="btn btn-sm ${x.active?'btn-danger':''}" data-action="toggle-voter" data-id="${x.id}" data-active="${x.active?'0':'1'}">${x.active?'Khóa mã':'Mở khóa'}</button></td></tr>`).join('')||'<tr><td colspan="4" class="muted">Chưa có tài khoản bình chọn nào.</td></tr>'}</tbody></table></div></div>`;}
 function adminCommentsView(){
  const list=S.adminComments||[]; const pending=list.filter(c=>c.status==='pending'||c.status==='hidden').length;
  const label={pending:'Chờ duyệt',approved:'Đã công khai',hidden:'Đã ẩn',rejected:'Từ chối'};
  return `<div class="card-panel"><div class="section-head"><div><h3>Duyệt bình luận ẩn danh</h3><p>Có ${pending} bình luận chờ xem xét hoặc bị báo cáo. Không công khai thông tin người gửi.</p></div><span class="badge-status">${list.length} bình luận</span></div>
  <div class="moderation-list">${list.length?list.map(c=>`<div class="moderation-item"><div class="moderation-head"><strong>${e(c.leader_name)}</strong><span class="mod-status status-${e(c.status)}">${label[c.status]||c.status}</span></div><div class="muted micro">${e(c.area)} · ${e(c.ward)} · ${dateText(c.created_at)} ${c.reports?' · '+c.reports+' báo cáo':''}</div><p class="moderation-text">${e(c.body)}</p><div class="moderation-actions"><button class="btn btn-sm btn-primary" data-action="moderate" data-id="${c.id}" data-status="approved">${icon('check',14)} Duyệt</button><button class="btn btn-sm" data-action="moderate" data-id="${c.id}" data-status="hidden">Ẩn</button><button class="btn btn-sm btn-danger" data-action="moderate" data-id="${c.id}" data-status="rejected">Từ chối</button></div></div>`).join(''):'<div class="notice">Chưa có bình luận.</div>'}</div></div>`;
 }
-function adminView(){return `<div class="page-head"><div><span class="eyebrow">QUẢN TRỊ DỮ LIỆU</span><h1 class="page-title">Quản lý hệ thống</h1><p class="page-desc">Chỉnh sửa danh sách tổ trưởng và cấp mã tham gia. Số điện thoại chỉ hiển thị cho quản trị viên.</p></div></div>${summary()}
-<div class="admin-tabs"><button data-action="admin-tab" data-value="leaders" class="${S.adminSection==='leaders'?'active':''}">Quản lý tổ trưởng</button><button data-action="admin-tab" data-value="participants" class="${S.adminSection==='participants'?'active':''}">Mã bình chọn</button><button data-action="admin-tab" data-value="comments" class="${S.adminSection==='comments'?'active':''}">Duyệt bình luận</button></div>
-${S.adminSection==='participants'?participantsView():S.adminSection==='comments'?adminCommentsView():`<div class="card-panel"><div class="section-head"><div><h3>Danh sách tổ trưởng <span class="muted">(${S.adminLeaders.length})</span></h3><p>Giữ nguyên dữ liệu nguồn 126 tổ trưởng, có thể bổ sung, chỉnh sửa hoặc ẩn.</p></div><button class="btn btn-primary" data-action="add-leader">${icon('plus',17)} Thêm tổ trưởng</button></div>${leaderRows()}</div>`}`;}
+function adminView(){return `<div class="page-head"><div><span class="eyebrow">QUẢN TRỊ DỮ LIỆU</span><h1 class="page-title">Quản lý hệ thống</h1><p class="page-desc">Chỉnh sửa danh sách tổ trưởng và duyệt bình luận ẩn danh. Số điện thoại chỉ hiển thị cho quản trị viên.</p></div></div>${summary()}
+<div class="admin-tabs"><button data-action="admin-tab" data-value="leaders" class="${S.adminSection==='leaders'?'active':''}">Quản lý tổ trưởng</button><button data-action="admin-tab" data-value="comments" class="${S.adminSection==='comments'?'active':''}">Duyệt bình luận</button></div>
+${S.adminSection==='comments'?adminCommentsView():`<div class="card-panel"><div class="section-head"><div><h3>Danh sách tổ trưởng <span class="muted">(${S.adminLeaders.length})</span></h3><p>Giữ nguyên dữ liệu nguồn 126 tổ trưởng, có thể bổ sung, chỉnh sửa hoặc ẩn.</p></div><button class="btn btn-primary" data-action="add-leader">${icon('plus',17)} Thêm tổ trưởng</button></div>${leaderRows()}</div>`}`;}
 function commentItems(){
  if(!S.comments.length)return `<div class="comment-empty">${icon('message',24)}<strong>Chưa có bình luận công khai</strong><span>Hãy chia sẻ trải nghiệm cụ thể, lịch sự và có tính xây dựng.</span></div>`;
  const labels={pending:'Đang chờ duyệt',approved:'Đã đăng',hidden:'Đã ẩn để kiểm tra',rejected:'Không được duyệt'};
@@ -235,13 +222,13 @@ function detailModal(){const x=S.leaders.find(l=>l.id===S.selected);if(!x)return
 return `<div class="modal-bg" data-action="close-bg"><div class="modal modal-profile" role="dialog" aria-modal="true" aria-labelledby="detail-title">
 <div class="profile-banner"><div class="profile-kicker">HỒ SƠ ĐÁNH GIÁ TỔ TRƯỞNG DÂN PHỐ <span>${e(wardName(x.ward))} · Ninh Bình</span></div><div class="profile-title-line"><span class="profile-avatar">${initial(x.name)}</span><div class="profile-title-text"><span class="profile-tag">TỔ TRƯỞNG DÂN PHỐ</span><h2 id="detail-title">${e(x.name)}</h2><p>${icon('pin',15)} ${e(x.area)}, ${e(x.ward)}, Ninh Bình</p></div><button class="icon-btn profile-close" data-action="close-modal" aria-label="Đóng cửa sổ">×</button></div><div class="profile-metrics"><span>${icon('users',16)} <b>${fnum(x.votes)}</b> lượt bình chọn</span><span>${icon('message',16)} <b>${fnum(S.commentTotal)}</b> bình luận công khai</span></div></div>
 <div class="profile-columns"><div class="profile-vote"><div class="profile-section-head"><span class="eyebrow">01 / BÌNH CHỌN</span><h3>Đánh giá của bạn</h3><p>Bình chọn theo trải nghiệm phối hợp thực tế.</p></div>
-${S.user.role==='voter'?`<div class="option-list">${LABELS.map((l,i)=>`<button type="button" class="vote-option ${s===i+1?'selected':''}" data-action="choose" data-level="${i+1}"><span class="option-mark c${i+1}"></span><b>${i+1}. ${e(l)}</b><span class="check-circle">${s===i+1?'✓':''}</span></button>`).join('')}</div><div class="btn-row"><button class="btn btn-primary" data-action="save-vote" ${s==null?'disabled':''}>${icon('check',16)} ${x.my_vote?'Cập nhật phiếu':'Gửi bình chọn'}</button>${x.my_vote?'<button class="btn btn-ghost btn-sm" data-action="remove-vote">Hủy phiếu</button>':''}</div>`:`<div class="notice">${S.user.role==='guest'?'Đăng nhập bằng mã bình chọn để đánh giá. <button class="btn btn-sm btn-primary" data-action="show-login">Đăng nhập</button>':'Quản trị viên chỉ xem kết quả, không tham gia bình chọn.'}</div>`}
+${S.user.role==='voter'?`<div class="option-list">${LABELS.map((l,i)=>`<button type="button" class="vote-option ${s===i+1?'selected':''}" data-action="choose" data-level="${i+1}"><span class="option-mark c${i+1}"></span><b>${i+1}. ${e(l)}</b><span class="check-circle">${s===i+1?'✓':''}</span></button>`).join('')}</div><div class="btn-row"><button class="btn btn-primary" data-action="save-vote" ${s==null?'disabled':''}>${icon('check',16)} ${x.my_vote?'Cập nhật phiếu':'Gửi bình chọn'}</button>${x.my_vote?'<button class="btn btn-ghost btn-sm" data-action="remove-vote">Hủy phiếu</button>':''}</div>`:`<div class="notice">${S.user.role==='guest'?'Đang khởi tạo phiên ẩn danh, vui lòng tải lại trang.':'Quản trị viên chỉ xem kết quả, không tham gia bình chọn.'}</div>`}
 <div class="profile-section-head result-sect"><span class="eyebrow">02 / KẾT QUẢ</span><h3>Phân bố đánh giá</h3><p>${fnum(x.votes)} phiếu từ người tham gia</p></div>
 ${x.revealed&&x.votes?LABELS.map((l,i)=>`<div class="result-row"><div><div class="title"><span>${e(l)}</span><span>${fnum(counts[i])} phiếu</span></div><div class="bar"><span style="width:${counts[i]*100/x.votes}%;background:${COLORS[i]}"></span></div></div><div class="percent">${percent(counts[i],x.votes)}%</div></div>`).join('')+`<div class="notice">Điểm trung bình: <strong>${Number(x.score).toFixed(2).replace('.',',')}/4</strong>, 4 là mức thuận lợi nhất.</div>`:`<div class="notice orange">${x.votes===0?'Chưa có bình chọn nào.':'Cần tối thiểu 3 phiếu để công bố tỷ lệ.'}</div>`}
 </div><div class="profile-comments"><div class="profile-section-head"><span class="eyebrow">03 / GÓC CHIA SẺ</span><h3>${icon('message',21)} Bình luận ẩn danh</h3><p>Danh tính không hiển thị với người xem. Chỉ bình luận về trải nghiệm phối hợp, không đưa thông tin cá nhân.</p></div>
-${S.user.role==='voter'?`<form id="comment-form" class="comment-compose"><div class="comment-compose-top"><span class="anon-avatar">${icon('shield',16)}</span><div><strong>Bình luận dưới tên Ẩn danh</strong><small>Không công bố tên, mã đăng nhập hay số điện thoại của bạn</small></div></div><textarea id="comment-text" name="body" required minlength="5" maxlength="700" rows="4" placeholder="Ví dụ: Bác phối hợp khá nhanh khi nhận giấy mời, hướng dẫn rõ địa chỉ...">${e(S.commentDraft)}</textarea><div class="compose-foot"><small><span id="comment-length">${S.commentDraft.length}</span>/700 ký tự · Nội dung sẽ được duyệt trước khi hiển thị</small><button class="btn btn-primary btn-sm" type="submit">${icon('message',15)} Gửi ẩn danh</button></div></form>`:`<div class="notice">${S.user.role==='guest'?'Hãy đăng nhập để bình luận ẩn danh. Bình luận chỉ công khai sau khi quản trị viên duyệt.':'Quản trị viên có thể duyệt bình luận trong khu vực Quản trị.'}</div>`}
+${S.user.role==='voter'?`<form id="comment-form" class="comment-compose"><div class="comment-compose-top"><span class="anon-avatar">${icon('shield',16)}</span><div><strong>Bình luận dưới tên Ẩn danh</strong><small>Không yêu cầu đăng nhập, không công bố danh tính của bạn</small></div></div><textarea id="comment-text" name="body" required minlength="5" maxlength="700" rows="4" placeholder="Ví dụ: Bác phối hợp khá nhanh khi nhận giấy mời, hướng dẫn rõ địa chỉ...">${e(S.commentDraft)}</textarea><div class="compose-foot"><small><span id="comment-length">${S.commentDraft.length}</span>/700 ký tự · Nội dung sẽ được duyệt trước khi hiển thị</small><button class="btn btn-primary btn-sm" type="submit">${icon('message',15)} Gửi ẩn danh</button></div></form>`:`<div class="notice">${S.user.role==='guest'?'Đang khởi tạo phiên ẩn danh, vui lòng tải lại trang.':'Quản trị viên có thể duyệt bình luận trong khu vực Quản trị.'}</div>`}
 <div class="comment-list-head"><h4>Bình luận cộng đồng</h4><span>${fnum(S.commentTotal)} bình luận công khai</span></div><div class="comment-list">${commentItems()}</div>
-<div class="safe-comment-note">${icon('shield',17)} Bình luận ẩn danh với người đọc nhưng hệ thống vẫn lưu mã tài khoản để ngăn spam và xử lý nội dung vi phạm. Những nhận xét này không phải kết luận xác minh.</div></div></div></div></div>`;
+<div class="safe-comment-note">${icon('shield',17)} Bình luận hiển thị ẩn danh. Trình duyệt được cấp mã ngẫu nhiên để giới hạn phiếu và bình luận; xóa cookie hoặc dùng thiết bị khác có thể tạo mã mới. Những nhận xét này không phải kết luận xác minh.</div></div></div></div></div>`;
 }
 function leaderModal(){const x=S.editLeader==='new'?null:S.adminLeaders.find(l=>l.id===S.editLeader);return `<div class="modal-bg" data-action="close-bg"><div class="modal large" role="dialog" aria-modal="true" aria-labelledby="edit-title"><div class="modal-head"><div><h2 id="edit-title">${x?'Chỉnh sửa tổ trưởng':'Thêm tổ trưởng dân phố'}</h2><p>Phạm vi quản lý: tỉnh Ninh Bình</p></div><button class="icon-btn" data-action="close-modal" aria-label="Đóng">×</button></div>
 <div class="modal-body"><form id="leader-form" data-id="${e(x?.id||'')}"><div class="form-grid">
@@ -264,10 +251,10 @@ try{
 if(act==='map-ward'){S.ward=b.dataset.value;S.view='directory';render();document.getElementById('directory-list')?.scrollIntoView({behavior:'smooth',block:'start'});return;}
 if(act==='map-all'){S.ward='';S.view='directory';render();return;}
 if(act==='show-login'){S.user=null;render();return;}
-if(act==='guest'){S.user=GUEST;await loadMain();render();return;}
-if(act==='authrole'){S.authRole=b.dataset.value;S.loginError='';render();return;}
+if(act==='guest'){const r=await req('/api/me');S.user=r.user||GUEST;S.loginError='';await loadMain();render();return;}
+
 if(act==='nav'){S.view=b.dataset.value;if(S.view==='admin')await loadAdmin();render();return;}
-if(act==='logout'){await req('/api/logout','POST',{});S.user=GUEST;S.selected=null;S.editLeader=null;await loadMain();render();return;}
+if(act==='logout'){await req('/api/logout','POST',{});const r=await req('/api/me');S.user=r.user||GUEST;S.selected=null;S.editLeader=null;await loadMain();render();return;}
 if(act==='voted-only'){S.votedOnly=!S.votedOnly;render();return;}
 if(act==='details'){S.selected=b.dataset.id;S.draftVote=S.leaders.find(l=>l.id===S.selected)?.my_vote??null;S.commentDraft='';S.comments=[];S.commentTotal=0;await loadComments(S.selected);render();return;}
 if(act==='close-modal'){S.selected=null;S.editLeader=null;render();return;}
@@ -275,19 +262,12 @@ if(act==='close-bg'){if(ev.target===b){S.selected=null;S.editLeader=null;render(
 if(act==='choose'){S.draftVote=Number(b.dataset.level);render();return;}
 if(act==='save-vote'){if(S.isSaving)return;S.isSaving=true;try{await req('/api/vote','POST',{leader_id:S.selected,level:S.draftVote});showToast('Đã ghi nhận bình chọn thành công.');await loadMain();render();}finally{S.isSaving=false;}return;}
 if(act==='remove-vote'){if(!window.confirm('Hủy phiếu bình chọn của bạn cho tổ trưởng này?'))return;await req('/api/vote/'+encodeURIComponent(S.selected),'DELETE');await loadMain();render();showToast('Đã hủy phiếu.');return;}
-if(act==='admin-tab'){S.adminSection=b.dataset.value;S.createdCodes=[];await loadAdmin();render();return;}
+if(act==='admin-tab'){S.adminSection=b.dataset.value;await loadAdmin();render();return;}
 if(act==='moderate'){await req('/api/admin/comments/'+b.dataset.id,'PUT',{status:b.dataset.status});await loadAdmin();render();showToast('Đã cập nhật trạng thái bình luận.');return;}
 if(act==='remove-comment'){if(!window.confirm('Bạn muốn xóa bình luận này?'))return;await req('/api/comments/'+b.dataset.id,'DELETE');await loadComments(S.selected);await loadMain();render();showToast('Đã xóa bình luận.');return;}
 if(act==='report-comment'){if(!window.confirm('Báo cáo bình luận này vì nội dung không phù hợp?'))return;await req('/api/comments/'+b.dataset.id+'/report','POST',{});await loadComments(S.selected);await loadMain();render();showToast('Đã gửi báo cáo để quản trị viên xem xét.');return;}
 if(act==='add-leader'){S.editLeader='new';render();return;}
 if(act==='edit-leader'){S.editLeader=b.dataset.id;render();return;}
-if(act==='copy'){await copyText(b.dataset.value);return;}
-if(act==='copy-all'){await copyText(S.createdCodes.map(c=>c.label+' : '+c.code).join('\n'));return;}
-if(act==='toggle-voter'){
- const active=b.dataset.active==='1';
- if(!active&&!window.confirm('Khóa mã này? Người dùng sẽ không thể đăng nhập nữa. Các phiếu đã gửi sẽ bị hủy để tránh giữ lại kết quả không hợp lệ.'))return;
- await req('/api/admin/participants/'+b.dataset.id,'PUT',{active});await loadAdmin();await loadMain();render();showToast(active?'Đã mở khóa mã.':'Đã khóa mã và hủy các phiếu liên quan.');return;
-}
 if(act==='export'){
  const blob=await req('/api/admin/export.csv');const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='ket_qua_binh_chon.csv';document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1500);return;
 }
@@ -301,12 +281,8 @@ app.addEventListener('submit',async ev=>{
   ev.preventDefault();let form=ev.target;
   try{
     if(form.id==='login-form'){
-      const code=form.elements.code.value.trim();const resp=await req('/api/login','POST',{role:S.authRole,code});
+      const code=form.elements.code.value.trim();const resp=await req('/api/login','POST',{role:'admin',code});
       S.user=resp.user;S.loginError='';S.view='directory';await loadMain();if(S.user.role==='admin')await loadAdmin();render();showToast('Đăng nhập thành công.');return;
-    }
-    if(form.id==='create-invites'){
-      const label=form.elements.label.value.trim();const quantity=Number(form.elements.quantity.value);
-      const r=await req('/api/admin/participants','POST',{label,quantity});S.createdCodes=r.created;await loadAdmin();render();showToast(`Đã tạo ${r.created.length} mã tham gia.`);return;
     }
     if(form.id==='comment-form'){
       const lid=S.selected;

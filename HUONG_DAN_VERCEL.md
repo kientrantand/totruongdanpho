@@ -9,4 +9,4 @@
 
 Vercel đọc `vercel.json` nên thông số Output Directory đã được chỉ định trong repo.
 
-Muốn người dùng Vote/bình luận chung: cần triển khai backend có phiên đăng nhập, duyệt bình luận, cơ sở dữ liệu bền vững và HTTPS. Không dùng SQLite cục bộ hoặc /tmp của Vercel để lưu phiếu vì không đảm bảo tồn tại lâu dài.
+Muốn người dùng Vote/bình luận chung: cần triển khai backend có phiên ẩn danh tự động (không cần đăng nhập để bình chọn), duyệt bình luận, cơ sở dữ liệu bền vững và HTTPS. Không dùng SQLite cục bộ hoặc /tmp của Vercel để lưu phiếu vì không đảm bảo tồn tại lâu dài.

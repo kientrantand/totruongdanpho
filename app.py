@@ -29,7 +29,7 @@ ROOT = Path(__file__).resolve().parent
 DB_PATH = Path(os.environ.get('TDP_DB_PATH', str(ROOT / 'data' / 'votes.sqlite3'))).expanduser()
 SEED_FILE = ROOT / 'data' / 'to_truong_126.json'
 COOKIE = 'tdp_session'
-SESSION_AGE = 60 * 60 * 24 * 14
+SESSION_AGE = 60 * 60 * 24 * 180
 MIN_PUBLIC_VOTES = 3
 MIN_RANK_VOTES = 5
 ALLOWED_WARDS = ('phường Trường Thi','phường Đông A','phường Thành Nam','phường Nam Định','phường Thiên Trường','phường Mỹ Lộc')
@@ -218,7 +218,7 @@ class ApiError(Exception):
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = 'ToPhoVote/3.0'
+    server_version = 'ToPhoVote/3.1'
     def log_message(self, fmt, *args):
         if self.path.startswith('/api/') and self.command == 'GET':
             return
@@ -277,10 +277,28 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             return None
 
+    def anonymous_user(self, con):
+        # Anonymously register one browser; not a one-person-one-vote guarantee.
+        existing = self.current_user(con)
+        if existing:
+            return existing, None
+        # No IP or identifying data is stored in the users table.
+        random_id = secrets.token_urlsafe(32)
+        label = 'Khách ẩn danh'
+        pid = con.execute("INSERT INTO participants(label, code_hash, role, created_at) VALUES(?, ?, 'voter', ?)", (label, digest(random_id), utcnow())).lastrowid
+        session = secrets.token_urlsafe(32)
+        csrf = secrets.token_urlsafe(24)
+        con.execute('INSERT INTO sessions(token_hash,participant_id,csrf_token,expires_at) VALUES(?,?,?,?)',
+                    (digest(session), pid, csrf, int(time.time())+SESSION_AGE))
+        user = con.execute('''SELECT p.id,p.label,p.role,p.active,s.csrf_token
+                 FROM sessions s JOIN participants p ON p.id=s.participant_id
+                 WHERE s.token_hash=?''', (digest(session),)).fetchone()
+        return user, self.cookie_header(session)
+
     def require(self, con, admin=False, mutate=False):
         user = self.current_user(con)
         if not user:
-            raise ApiError(401,'Vui lòng đăng nhập bằng mã bình chọn.')
+            raise ApiError(401,'Phiên ẩn danh chưa được tạo. Vui lòng tải lại trang.')
         if admin and user['role'] != 'admin':
             raise ApiError(403,'Bạn không có quyền quản trị.')
         if mutate:
@@ -309,8 +327,9 @@ class Handler(BaseHTTPRequestHandler):
                 if method == 'POST' and path == '/api/login':
                     return self.login(con)
                 if method == 'GET' and path == '/api/me':
-                    user = self.current_user(con)
-                    return self.response(200,{'user':participant_api(con,user) if user else None})
+                    user, cookie_header = self.anonymous_user(con)
+                    hdr = {'Set-Cookie':cookie_header} if cookie_header else None
+                    return self.response(200,{'user':participant_api(con,user)},hdr)
                 # Public, read-only directory and results. Phone numbers and user identities stay private.
                 if method == 'GET' and path == '/api/public/leaders':
                     return self.get_leaders(con, {'id': -1, 'role': 'guest'})
@@ -371,8 +390,8 @@ class Handler(BaseHTTPRequestHandler):
             raise ApiError(429,'Đăng nhập quá nhiều lần. Hãy thử lại sau 5 phút.')
         data = self.content_json()
         role = data.get('role','voter')
-        if role not in ('voter','admin'):
-            raise ApiError(400,'Vai trò không hợp lệ.')
+        if role != 'admin':
+            raise ApiError(400,'Chỉ quản trị viên cần đăng nhập.')
         token = safe_text(data.get('code',''),200)
         if len(token) < 4:
             raise ApiError(400,'Vui lòng nhập mã đăng nhập.')
@@ -496,7 +515,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def add_comment(self,con,user):
         if user['role'] != 'voter':
-            raise ApiError(403,'Chỉ người được cấp mã bình chọn mới có thể bình luận.')
+            raise ApiError(403,'Không thể bình luận bằng tài khoản quản trị.')
         data=self.content_json()
         lid=safe_text(data.get('leader_id',''),48)
         body=data.get('body')
@@ -534,7 +553,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def report_comment(self,con,user,cid):
         if user['role']!='voter':
-            raise ApiError(403,'Chỉ người bình chọn được báo cáo nội dung.')
+            raise ApiError(403,'Không thể báo cáo bằng tài khoản quản trị.')
         row=con.execute("SELECT participant_id,status FROM comments WHERE id=?",(cid,)).fetchone()
         if not row or row['status']!='approved':
             raise ApiError(404,'Bình luận đã không còn công khai.')
@@ -565,39 +584,6 @@ class Handler(BaseHTTPRequestHandler):
                (status,utcnow(),int(m.group(1))))
             if cur.rowcount==0:
                 raise ApiError(404,'Bình luận không tồn tại.')
-            return self.response(200,{'ok':True})
-        if method=='GET' and path=='/api/admin/participants':
-            rows=con.execute('''SELECT p.id,p.label,p.active,p.created_at,COUNT(v.leader_id) voted
-                                 FROM participants p LEFT JOIN votes v ON v.participant_id=p.id
-                                 WHERE p.role='voter' GROUP BY p.id ORDER BY p.id DESC''').fetchall()
-            return self.response(200,{'participants':[dict(r) for r in rows]})
-        if method=='POST' and path=='/api/admin/participants':
-            data=self.content_json()
-            name=safe_text(data.get('label',''),60)
-            qty=data.get('quantity',1)
-            if not name: raise ApiError(400,'Hãy nhập tên nhóm hoặc người tham gia.')
-            if type(qty) is not int or qty<1 or qty>50:
-                raise ApiError(400,'Có thể tạo từ 1 đến 50 mã mỗi lần.')
-            created=[]
-            for i in range(qty):
-                code='TDP-'+secrets.token_hex(5).upper()
-                label=name if qty==1 else f'{name} #{i+1:02d}'
-                r=con.execute('''INSERT INTO participants(label,code_hash,role,created_at)
-                   VALUES(?,?, 'voter',?)''', (label,digest(code),utcnow()))
-                created.append({'id':r.lastrowid,'label':label,'code':code})
-            return self.response(201,{'created':created})
-        m=re.fullmatch(r'/api/admin/participants/(\d+)',path)
-        if method=='PUT' and m:
-            data=self.content_json()
-            active=data.get('active')
-            if type(active) is not bool:
-                raise ApiError(400,'Trạng thái không hợp lệ.')
-            uid=int(m.group(1))
-            con.execute("UPDATE participants SET active=? WHERE id=? AND role='voter'",(int(active),uid))
-            if not active:
-                con.execute('DELETE FROM sessions WHERE participant_id=?',(uid,))
-                con.execute('DELETE FROM votes WHERE participant_id=?',(uid,))
-                con.execute('DELETE FROM comments WHERE participant_id=?',(uid,))
             return self.response(200,{'ok':True})
         if method=='GET' and path=='/api/admin/export.csv':
             out=io.StringIO()
