@@ -11,6 +11,9 @@ import os
 import re
 import secrets
 from datetime import datetime, timedelta, timezone
+from openpyxl import Workbook as ExcelWorkbook, load_workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.worksheet.datavalidation import DataValidation
 from functools import wraps
 from pathlib import Path
 
@@ -21,7 +24,7 @@ from flask import Flask, Response, g, jsonify, make_response, request, send_from
 ROOT = Path(__file__).resolve().parent
 app = Flask(__name__)
 app.json.ensure_ascii = False
-app.config['MAX_CONTENT_LENGTH'] = 20_000
+app.config['MAX_CONTENT_LENGTH'] = 2_500_000
 COOKIE = 'tdp_session'
 SESSION_DAYS = 180
 MIN_PUBLIC = 3
@@ -531,6 +534,210 @@ def edit_leader(lid):
         return fail('Không tìm thấy tổ trưởng.',404)
     return jsonify(ok=True)
 
+
+
+# ---- Admin Excel import/export: explicit preview then atomic commit ----
+EXCEL_HEADERS = ('Mã tổ trưởng','Họ và tên','Tổ/thôn/xóm/đội','Phường',
+                 'Số điện thoại','Số điện thoại phụ','Địa bàn cũ','Trạng thái')
+EXCEL_MAX_ROWS = 500
+EXCEL_MAX_BYTES = 2_000_000
+
+
+def excel_safe(v):
+    # Prevent spreadsheet formula execution in administrator downloads.
+    s = '' if v is None else str(v)
+    return "'" + s if s.startswith(('=', '+', '-', '@')) else s
+
+
+def excel_export(rows, filename):
+    book = ExcelWorkbook()
+    ws = book.active
+    ws.title = 'Danh_sach_to_truong'
+    ws.append(list(EXCEL_HEADERS))
+    for r in rows:
+        aliases = r.get('aliases') or []
+        if isinstance(aliases, str):
+            try: aliases = json.loads(aliases)
+            except (TypeError, ValueError): aliases = []
+        ws.append([excel_safe(r.get('id','')),excel_safe(r.get('name','')),
+                   excel_safe(r.get('area','')),excel_safe(r.get('ward','')),
+                   excel_safe(r.get('phone','')),excel_safe(r.get('phone_alt','')),
+                   excel_safe(', '.join(str(t) for t in aliases)),
+                   'Đang sử dụng' if r.get('active',True) else 'Ẩn'])
+    ws.freeze_panes='A2'
+    ws.auto_filter.ref=f'A1:H{max(2,ws.max_row)}'
+    widths=[19,28,28,24,19,19,35,19]
+    for i,w in enumerate(widths,1):
+        ws.column_dimensions[chr(64+i)].width=w
+    for cell in ws[1]:
+        cell.fill=PatternFill('solid',fgColor='193B69')
+        cell.font=Font(name='Arial',bold=True,color='FFFFFF',size=11)
+        cell.alignment=Alignment(vertical='center',wrap_text=True)
+    ws.row_dimensions[1].height=35
+    for row in ws.iter_rows(min_row=2):
+        for cell in row:
+            cell.number_format='@'
+            cell.alignment=Alignment(vertical='center')
+    ward_dv=DataValidation(type='list',formula1='Danh_muc!$A$2:$A$7')
+    ward_dv.error='Vui lòng chọn đúng một trong 6 phường';ward_dv.errorTitle='Sai phường';ward_dv.showErrorMessage=True
+    ws.add_data_validation(ward_dv);ward_dv.add('D2:D501')
+    state_dv=DataValidation(type='list',formula1='"Đang sử dụng,Ẩn"')
+    ws.add_data_validation(state_dv);state_dv.add('H2:H501')
+    guide=book.create_sheet('Huong_dan')
+    guide.append(['HƯỚNG DẪN NHẬP DANH SÁCH E-TDP'])
+    guide.append(['1. Sửa dữ liệu tại sheet Danh_sach_to_truong; không đổi tiêu đề 8 cột.'])
+    guide.append(['2. Giữ nguyên Mã tổ trưởng khi cập nhật người đã có để bảo toàn phiếu bình chọn.'])
+    guide.append(['3. Để trống Mã tổ trưởng khi thêm người mới.'])
+    guide.append(['4. Phường chọn từ danh sách, tỉnh mặc định là Ninh Bình.'])
+    guide.append(['5. Số điện thoại nhập dạng văn bản để giữ chữ số 0 đầu tiên.'])
+    guide.append(['6. Nhập lại trên website quản trị: Xem trước -> Xác nhận lưu.'])
+    guide.append(['7. Nếu trùng địa bàn nhưng khác tên và không có mã, hệ thống sẽ cảnh báo để tránh ghi nhầm phiếu.'])
+    guide.column_dimensions['A'].width=105
+    guide['A1'].font=Font(name='Arial',bold=True,color='1D4E89',size=15)
+    categories=book.create_sheet('Danh_muc')
+    categories.append(['Phường','Trạng thái'])
+    for w in WARDS: categories.append([w,'Đang sử dụng'])
+    categories.column_dimensions['A'].width=28
+    categories.column_dimensions['B'].width=20
+    out=io.BytesIO();book.save(out);out.seek(0)
+    return Response(out.getvalue(),mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',headers={
+        'Content-Disposition':f'attachment; filename="{filename}"',
+        'Cache-Control':'no-store'
+    })
+
+
+@app.get('/api/admin/template.xlsx')
+@protected(admin=True)
+def blank_template():
+    return excel_export([], 'Mau_nhap_to_truong_E-TDP.xlsx')
+
+
+@app.get('/api/admin/leaders.xlsx')
+@protected(admin=True)
+def leaders_excel():
+    rows=query('SELECT id,name,area,ward,phone,phone_alt,aliases,active FROM app.leaders ORDER BY ward,area,name')
+    return excel_export(rows, 'Danh_sach_to_truong_E-TDP.xlsx')
+
+
+def excel_text(value, max_len=100):
+    if value is None:return ''
+    # Numeric phone values in Excel lose the leading zero; never guess it.
+    if isinstance(value,(int,float)) and not isinstance(value,bool):
+        return str(int(value)) if int(value)==value else str(value)
+    return clean(str(value),max_len)
+
+
+def parse_excel(file):
+    if not file.filename or not file.filename.lower().endswith('.xlsx'):
+        raise ValueError('Chỉ chấp nhận file Excel định dạng .xlsx.')
+    raw=file.read(EXCEL_MAX_BYTES+1)
+    if len(raw)>EXCEL_MAX_BYTES:
+        raise ValueError('File Excel vượt quá 2 MB.')
+    try:
+        book=load_workbook(io.BytesIO(raw),read_only=True,data_only=True)
+        ws=book['Danh_sach_to_truong'] if 'Danh_sach_to_truong' in book.sheetnames else book.active
+        headers=tuple(excel_text(c,120) for c in next(ws.iter_rows(min_row=1,max_row=1,values_only=True),()))
+        if headers[:8]!=EXCEL_HEADERS:
+            raise ValueError('Sai định dạng tiêu đề Excel. Vui lòng tải mẫu từ hệ thống.')
+        entries=[]
+        for row_idx,row in enumerate(ws.iter_rows(min_row=2,max_col=8,values_only=True),start=2):
+            if not any(c is not None and str(c).strip() for c in row): continue
+            if len(entries)>=EXCEL_MAX_ROWS: raise ValueError('Tối đa 500 dòng trong mỗi lần nhập.')
+            entries.append((row_idx,tuple(row)))
+        return entries
+    except ValueError:raise
+    except Exception as exc:
+        raise ValueError('Không đọc được Excel. Hãy dùng file .xlsx đúng mẫu hệ thống.') from exc
+
+
+def import_plan(rows):
+    # Read leader snapshot for collision detection and identify stability.
+    current=query('SELECT id,name,area,ward,phone,phone_alt,aliases,active FROM app.leaders')
+    by_id={r['id']:r for r in current}
+    by_area={}
+    norm=lambda x:re.sub(r'\s+',' ',x.casefold().strip())
+    for old in current:
+        key=(norm(old['ward']),norm(old['area']))
+        by_area.setdefault(key,[]).append(old)
+    errors=[];actions=[];seen_ids=set();seen_areas=set()
+    for lineno,cells in rows:
+        cell=[excel_text(v,200) for v in cells]
+        ident,name,area,ward,phone,phone_alt,alias_text,state=cell
+        if not ward.startswith('phường '):
+            matched=next((w for w in WARDS if norm(w)==norm('phường '+ward)),None)
+            ward=matched or ward
+        if not name or not area or ward not in WARDS:
+            errors.append(f'Dòng {lineno}: thiếu họ tên/địa bàn hoặc phường không thuộc 6 phường.');continue
+        if len(name)>90 or len(area)>100:
+            errors.append(f'Dòng {lineno}: họ tên hoặc địa bàn quá dài.');continue
+        if ident and not re.fullmatch(r'[A-Za-z0-9_-]{2,64}',ident):
+            errors.append(f'Dòng {lineno}: mã tổ trưởng không hợp lệ.');continue
+        if phone and (not isinstance(cells[4],str) or not re.fullmatch(r'[+0-9() .-]{9,30}',phone)):
+            errors.append(f'Dòng {lineno}: số điện thoại chính phải là văn bản hợp lệ, giữ số 0 đầu.');continue
+        if phone_alt and (not isinstance(cells[5],str) or not re.fullmatch(r'[+0-9() .-]{9,30}',phone_alt)):
+            errors.append(f'Dòng {lineno}: số điện thoại phụ phải là văn bản hợp lệ.');continue
+        if state and state not in ('Đang sử dụng','Ẩn'):
+            errors.append(f'Dòng {lineno}: trạng thái phải là Đang sử dụng hoặc Ẩn.');continue
+        active=state!='Ẩn'
+        aliases=[clean(x,90) for x in alias_text.split(',') if clean(x)]
+        if len(aliases)>20:
+            errors.append(f'Dòng {lineno}: có quá nhiều tên địa bàn cũ.');continue
+        area_key=(norm(ward),norm(area))
+        if area_key in seen_areas:
+            errors.append(f'Dòng {lineno}: trùng phường và địa bàn trong file.');continue
+        seen_areas.add(area_key)
+        existing=by_id.get(ident) if ident else None
+        if ident:
+            if ident in seen_ids:
+                errors.append(f'Dòng {lineno}: mã tổ trưởng bị lặp.');continue
+            seen_ids.add(ident)
+            if not existing:
+                errors.append(f'Dòng {lineno}: mã {ident} không tồn tại. Để trống mã để thêm người mới.');continue
+        else:
+            matches=by_area.get(area_key,[])
+            if len(matches)>1:
+                errors.append(f'Dòng {lineno}: địa bàn có nhiều bản ghi, cần mã tổ trưởng để phân biệt.');continue
+            if matches:
+                existing=matches[0]
+                if norm(existing['name'])!=norm(name):
+                    errors.append(f'Dòng {lineno}: địa bàn {area} đã có người khác; cần kiểm tra thay đổi nhân sự trước khi nhập.');continue
+        conflict=by_area.get(area_key,[])
+        if conflict and any(x['id'] != (existing['id'] if existing else None) for x in conflict):
+            errors.append(f'Dòng {lineno}: địa bàn này đã thuộc tổ trưởng khác.');continue
+        data=(name,area,ward,phone,phone_alt,json.dumps(aliases,ensure_ascii=False),active)
+        if existing:
+            prev=(existing['name'],existing['area'],existing['ward'],existing['phone'],existing['phone_alt'],json.dumps(existing['aliases'],ensure_ascii=False),existing['active'])
+            kind='skip' if data==prev else 'update'
+            actions.append((kind,existing['id'],data,lineno))
+        else:
+            actions.append(('create',None,data,lineno))
+    result={'total':len(rows),'create':sum(a[0]=='create' for a in actions),
+            'update':sum(a[0]=='update' for a in actions),
+            'skip':sum(a[0]=='skip' for a in actions), 'errors':errors}
+    return result,actions
+
+
+@app.post('/api/admin/import-xlsx')
+@protected(admin=True,write=True)
+def import_xlsx():
+    file=request.files.get('file')
+    if file is None:return fail('Chưa chọn file Excel.')
+    mode=request.form.get('mode','preview')
+    if mode not in ('preview','commit'):return fail('Chế độ không hợp lệ.')
+    rows=parse_excel(file)
+    result,actions=import_plan(rows)
+    if mode=='preview':return jsonify(result)
+    if result['errors']:return fail('Dữ liệu còn lỗi. Hãy tải lại Excel và xem trước.',409)
+    with g.db.transaction():
+        for kind,lid,data,lineno in actions:
+            if kind=='create':
+                new_id='IMP-'+secrets.token_hex(6).upper()
+                g.db.execute('''INSERT INTO app.leaders(id,name,area,ward,phone,phone_alt,aliases,active,source)
+                    VALUES(%s,%s,%s,%s,%s,%s,%s::jsonb,%s,'Import Excel')''',(new_id,*data))
+            elif kind=='update':
+                g.db.execute('''UPDATE app.leaders SET name=%s,area=%s,ward=%s,phone=%s,
+                    phone_alt=%s,aliases=%s::jsonb,active=%s,updated_at=now() WHERE id=%s''',(*data,lid))
+    return jsonify(ok=True,**result)
 
 @app.get('/api/admin/comments')
 @protected(admin=True)
