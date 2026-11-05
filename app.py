@@ -1,7 +1,7 @@
-#!/usr/bin/env python3
-"""Binh chon to truong dan pho - Python standard library, multi-user SQLite server."""
-import argparse
-import base64
+"""Tổ trưởng dân phố V4: Flask API + Supabase PostgreSQL.
+
+Dữ liệu trong schema app, mọi thao tác ghi qua backend. Không có mật khẩu trong repo.
+"""
 import csv
 import hashlib
 import hmac
@@ -10,674 +10,562 @@ import json
 import os
 import re
 import secrets
-import socket
-import sqlite3
-import ssl
-import sys
-import threading
-import time
-import unicodedata
-import urllib.parse
-import webbrowser
-from datetime import datetime, timezone
-from http import HTTPStatus
-from http.cookies import SimpleCookie
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from datetime import datetime, timedelta, timezone
+from functools import wraps
 from pathlib import Path
 
+import psycopg
+from psycopg.rows import dict_row
+from flask import Flask, Response, g, jsonify, make_response, request, send_from_directory
+
 ROOT = Path(__file__).resolve().parent
-DB_PATH = Path(os.environ.get('TDP_DB_PATH', str(ROOT / 'data' / 'votes.sqlite3'))).expanduser()
-SEED_FILE = ROOT / 'data' / 'to_truong_126.json'
+app = Flask(__name__)
+app.json.ensure_ascii = False
+app.config['MAX_CONTENT_LENGTH'] = 20_000
 COOKIE = 'tdp_session'
-SESSION_AGE = 60 * 60 * 24 * 180
-MIN_PUBLIC_VOTES = 3
-MIN_RANK_VOTES = 5
-ALLOWED_WARDS = ('phường Trường Thi','phường Đông A','phường Thành Nam','phường Nam Định','phường Thiên Trường','phường Mỹ Lộc')
-MAX_COMMENT_CHARS = 700
-MAX_BODY = 20_000
+SESSION_DAYS = 180
+MIN_PUBLIC = 3
+MIN_RANK = 5
+WARDS = ('phường Trường Thi', 'phường Đông A', 'phường Thành Nam',
+         'phường Nam Định', 'phường Thiên Trường', 'phường Mỹ Lộc')
 LEVELS = ('Đáng yêu, dễ tính', 'Bình thường, không khó cũng không dễ',
           'Quái tính, lúc nắng lúc mưa', 'Thường xuyên gây khó khăn')
-CSS_JS = {'/': ('index.html', 'text/html; charset=utf-8'),
-          '/index.html': ('index.html', 'text/html; charset=utf-8'),
-          '/static/style.css': ('style.css', 'text/css; charset=utf-8'),
-          '/static/app.js': ('app.js', 'text/javascript; charset=utf-8')}
-AUTH_TRIES = {}
-AUTH_LOCK = threading.Lock()
-SECURE_COOKIES = False
 
 
-def db():
-    conn = sqlite3.connect(str(DB_PATH), timeout=15)
-    conn.row_factory = sqlite3.Row
-    conn.execute('PRAGMA foreign_keys=ON')
-    conn.execute('PRAGMA busy_timeout=15000')
-    return conn
+def now():
+    return datetime.now(timezone.utc)
 
 
 def digest(s):
     return hashlib.sha256(s.encode('utf-8')).hexdigest()
 
 
-def hashed_password(password, salt=None):
-    salt = salt or secrets.token_hex(16)
-    pwd = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'),
-                             bytes.fromhex(salt), 370_000).hex()
-    return salt + ':' + pwd
+def clean(value, size=120):
+    return re.sub(r'\s+', ' ', value).strip()[:size] if isinstance(value, str) else ''
 
 
-def verify_password(value, stored):
-    try:
-        salt, _ = stored.split(':', 1)
-        return hmac.compare_digest(hashed_password(value, salt), stored)
-    except (ValueError, AttributeError):
-        return False
+def fail(msg, status=400):
+    return jsonify(error=msg), status
 
 
-def safe_text(v, length=120):
-    if not isinstance(v, str):
-        return ''
-    return re.sub(r'\s+', ' ', v).strip()[:length]
+def conn():
+    url = os.environ.get('DATABASE_URL', '')
+    if not url.startswith(('postgresql://', 'postgres://')):
+        raise RuntimeError('DATABASE_URL chưa được thiết lập')
+    # Supabase transaction pooler không hỗ trợ prepared statements.
+    return psycopg.connect(url, row_factory=dict_row, prepare_threshold=None,
+                           connect_timeout=8, sslmode='require')
 
 
-def utcnow():
-    return datetime.now(timezone.utc).isoformat(timespec='seconds')
+def query(sql, args=(), one=False):
+    cur = g.db.execute(sql, args)
+    return cur.fetchone() if one else cur.fetchall()
 
 
-def setup_db():
-    DB_PATH.parent.mkdir(exist_ok=True, parents=True)
-    first_run = not DB_PATH.exists()
-    with db() as con:
-        con.executescript('''
-          CREATE TABLE IF NOT EXISTS leaders (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            area TEXT NOT NULL,
-            ward TEXT NOT NULL,
-            phone TEXT NOT NULL DEFAULT '',
-            phone_alt TEXT NOT NULL DEFAULT '',
-            aliases TEXT NOT NULL DEFAULT '[]',
-            source TEXT NOT NULL DEFAULT '',
-            active INTEGER NOT NULL DEFAULT 1,
-            created_at TEXT NOT NULL
-          );
-          CREATE TABLE IF NOT EXISTS participants (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            label TEXT NOT NULL,
-            code_hash TEXT NOT NULL UNIQUE,
-            role TEXT NOT NULL CHECK(role IN ('admin','voter')),
-            active INTEGER NOT NULL DEFAULT 1,
-            created_at TEXT NOT NULL
-          );
-          CREATE TABLE IF NOT EXISTS sessions (
-            token_hash TEXT PRIMARY KEY,
-            participant_id INTEGER NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
-            csrf_token TEXT NOT NULL,
-            expires_at INTEGER NOT NULL
-          );
-          CREATE TABLE IF NOT EXISTS votes (
-            participant_id INTEGER NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
-            leader_id TEXT NOT NULL REFERENCES leaders(id),
-            level INTEGER NOT NULL CHECK(level BETWEEN 1 AND 4),
-            updated_at TEXT NOT NULL,
-            PRIMARY KEY(participant_id, leader_id)
-          );
-          CREATE TABLE IF NOT EXISTS comments (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            leader_id TEXT NOT NULL REFERENCES leaders(id),
-            participant_id INTEGER NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
-            body TEXT NOT NULL,
-            status TEXT NOT NULL CHECK(status IN ('pending','approved','hidden','rejected')) DEFAULT 'pending',
-            created_at TEXT NOT NULL,
-            moderated_at TEXT
-          );
-          CREATE TABLE IF NOT EXISTS comment_reports (
-            comment_id INTEGER NOT NULL REFERENCES comments(id) ON DELETE CASCADE,
-            participant_id INTEGER NOT NULL REFERENCES participants(id) ON DELETE CASCADE,
-            created_at TEXT NOT NULL,
-            PRIMARY KEY(comment_id, participant_id)
-          );
-          CREATE INDEX IF NOT EXISTS idx_comments_leader_status ON comments(leader_id,status,id DESC);
-          CREATE INDEX IF NOT EXISTS idx_comments_status ON comments(status,id DESC);
-          CREATE INDEX IF NOT EXISTS idx_leaders_ward ON leaders(ward,active);
-          CREATE INDEX IF NOT EXISTS idx_votes_leader ON votes(leader_id);
-        ''')
-        if not con.execute('SELECT 1 FROM leaders LIMIT 1').fetchone():
-            data = json.loads(SEED_FILE.read_text(encoding='utf-8'))
-            for row in data:
-                con.execute('''INSERT INTO leaders(id,name,area,ward,phone,phone_alt,aliases,source,created_at)
-                               VALUES(?,?,?,?,?,?,?,?,?)''',
-                    (row['id'], row['name'], row['area'], row['ward'],
-                     row.get('phone', ''), row.get('phoneAlt', ''),
-                     json.dumps(row.get('aliases', []), ensure_ascii=False),
-                     row.get('source', ''), utcnow()))
-            print(f'Loaded {len(data)} leaders from the dataset.')
-        if not con.execute("SELECT 1 FROM participants WHERE role='admin' LIMIT 1").fetchone():
-            password = secrets.token_urlsafe(12)
-            con.execute('''INSERT INTO participants(label,code_hash,role,created_at)
-                           VALUES('Quản trị viên',?,'admin',?)''',
-                        (hashed_password(password), utcnow()))
-            print('\n' + '=' * 72)
-            print('MẬT KHẨU QUẢN TRỊ LẦN ĐẦU (HÃY LƯU NGAY, CHỈ HIỆN 1 LẦN):')
-            print(password)
-            print('=' * 72 + '\n')
-        con.execute('DELETE FROM sessions WHERE expires_at < ?', (int(time.time()),))
-    return first_run
+def scalar(sql, args=()):
+    row = g.db.execute(sql, args).fetchone()
+    return next(iter(row.values())) if row else None
 
 
-def reset_admin_password():
-    password = secrets.token_urlsafe(12)
-    with db() as con:
-        con.execute("UPDATE participants SET code_hash=?, active=1 WHERE role='admin'",
-                    (hashed_password(password),))
-        con.execute("DELETE FROM sessions WHERE participant_id IN (SELECT id FROM participants WHERE role='admin')")
-    print('MẬT KHẨU QUẢN TRỊ MỚI:', password)
+def payload():
+    obj = request.get_json(silent=True)
+    if not isinstance(obj, dict):
+        raise ValueError('Dữ liệu gửi phải ở định dạng JSON.')
+    return obj
 
 
-def normalize(s):
-    s = unicodedata.normalize('NFD', str(s).lower())
-    s = ''.join(c for c in s if not unicodedata.combining(c))
-    return s.replace('đ', 'd')
+def set_session(response, token):
+    response.set_cookie(COOKIE, token, max_age=SESSION_DAYS * 86400,
+                        secure=True, httponly=True, samesite='Strict', path='/')
+    return response
 
 
-def leader_stats(con, user_id):
-    rows = con.execute('''SELECT leader_id, COUNT(*) AS total,
-        SUM(CASE WHEN level=1 THEN 1 ELSE 0 END) AS n1,
-        SUM(CASE WHEN level=2 THEN 1 ELSE 0 END) AS n2,
-        SUM(CASE WHEN level=3 THEN 1 ELSE 0 END) AS n3,
-        SUM(CASE WHEN level=4 THEN 1 ELSE 0 END) AS n4,
-        ROUND(AVG(5.0 - level),2) AS score
-        FROM votes GROUP BY leader_id''').fetchall()
-    own = {r['leader_id']: r['level'] for r in con.execute(
-        'SELECT leader_id, level FROM votes WHERE participant_id=?', (user_id,))}
-    return {r['leader_id']: dict(r) for r in rows}, own
+def current_user():
+    token = request.cookies.get(COOKIE, '')
+    if not token or len(token) > 160:
+        return None
+    return query('''SELECT p.id,p.label,p.role,s.csrf_token
+       FROM app.sessions s JOIN app.participants p ON p.id=s.participant_id
+       WHERE s.token_hash=%s AND s.expires_at > now() AND p.active=TRUE''',
+       (digest(token),), one=True)
 
 
-def participant_api(con, user):
-    data = dict(user)
-    voted = con.execute('SELECT COUNT(*) FROM votes WHERE participant_id=?',(user['id'],)).fetchone()[0]
+def user_object(user):
     return {'id': user['id'], 'label': user['label'], 'role': user['role'],
-            'voted': voted, 'csrf': user['csrf_token']}
+            'csrf': user['csrf_token'],
+            'voted': scalar('SELECT count(*) FROM app.votes WHERE participant_id=%s', (user['id'],))}
 
 
-def rate_limit(ip):
-    now = time.time()
-    with AUTH_LOCK:
-        attempts = [t for t in AUTH_TRIES.get(ip, []) if now - t < 300]
-        if len(attempts) >= 12:
-            return True
-        attempts.append(now)
-        AUTH_TRIES[ip] = attempts
-        if len(AUTH_TRIES) > 400:
-            AUTH_TRIES.clear()
-        return False
+def require(admin=False, write=False):
+    user = current_user()
+    if not user:
+        raise PermissionError('Phiên truy cập hết hạn. Vui lòng tải lại trang.')
+    if admin and user['role'] != 'admin':
+        raise PermissionError('Bạn không có quyền quản trị.')
+    if write and not hmac.compare_digest(request.headers.get('X-CSRF-Token', ''), user['csrf_token']):
+        raise PermissionError('Mã bảo vệ phiên không hợp lệ. Vui lòng tải lại trang.')
+    return user
 
 
-class ApiError(Exception):
-    def __init__(self, status, msg):
-        self.status, self.msg = status, msg
+def protected(admin=False, write=False):
+    def decorator(fn):
+        @wraps(fn)
+        def wrapper(*args, **kwargs):
+            require(admin=admin, write=write)
+            return fn(*args, **kwargs)
+        return wrapper
+    return decorator
 
 
-class Handler(BaseHTTPRequestHandler):
-    server_version = 'ToPhoVote/3.1'
-    def log_message(self, fmt, *args):
-        if self.path.startswith('/api/') and self.command == 'GET':
-            return
-        super().log_message(fmt, *args)
+@app.before_request
+def before():
+    # Static asset được Flask/Vercel trả trực tiếp, các API mới cần truy cập PG.
+    if request.path.startswith('/api/'):
+        origin = request.headers.get('Origin')
+        if request.method in ('POST', 'PUT', 'DELETE') and origin:
+            from urllib.parse import urlparse
+            src = urlparse(origin)
+            if (src.netloc != request.host or src.scheme != 'https'):
+                return fail('Yêu cầu khác nguồn không được phép.', 403)
+        g.db = conn()
 
-    def headers_common(self):
-        self.send_header('Cache-Control', 'no-store')
-        self.send_header('X-Content-Type-Options', 'nosniff')
-        self.send_header('Referrer-Policy', 'no-referrer')
-        self.send_header('X-Frame-Options', 'DENY')
-        self.send_header('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
-        self.send_header('Content-Security-Policy', "default-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; img-src 'self' data:; connect-src 'self' https://raw.githubusercontent.com; script-src 'self'; style-src 'self'")
 
-    def response(self, status, obj, headers=None, ctype='application/json; charset=utf-8'):
-        content = (json.dumps(obj, ensure_ascii=False).encode('utf-8') if not isinstance(obj, bytes) else obj)
-        self.send_response(status)
-        self.headers_common()
-        self.send_header('Content-Type', ctype)
-        self.send_header('Content-Length', str(len(content)))
-        for key, val in (headers or {}).items():
-            self.send_header(key, val)
-        self.end_headers()
-        self.wfile.write(content)
-
-    def content_json(self):
+@app.teardown_request
+def after(exception):
+    db = g.pop('db', None)
+    if db is not None:
         try:
-            n = int(self.headers.get('Content-Length','0'))
-        except ValueError:
-            raise ApiError(400,'Dữ liệu gửi không hợp lệ.')
-        if n <= 0 or n > MAX_BODY:
-            raise ApiError(413,'Dữ liệu quá lớn hoặc bị thiếu.')
-        if 'application/json' not in self.headers.get('Content-Type', ''):
-            raise ApiError(415,'Yêu cầu nội dung JSON.')
-        try:
-            parsed = json.loads(self.rfile.read(n).decode('utf-8'))
-            if not isinstance(parsed, dict):
-                raise ValueError()
-            return parsed
-        except (ValueError, UnicodeDecodeError):
-            raise ApiError(400,'Dữ liệu JSON không hợp lệ.')
-
-    def current_user(self, con):
-        try:
-            cookie = SimpleCookie()
-            cookie.load(self.headers.get('Cookie', ''))
-            token = cookie.get(COOKIE)
-            if not token:
-                return None
-            value = token.value
-            if len(value) > 160:
-                return None
-            return con.execute('''SELECT p.id,p.label,p.role,p.active,s.csrf_token
-                 FROM sessions s JOIN participants p ON p.id=s.participant_id
-                 WHERE s.token_hash=? AND s.expires_at>? AND p.active=1''',
-                 (digest(value),int(time.time()))).fetchone()
-        except Exception:
-            return None
-
-    def anonymous_user(self, con):
-        # Anonymously register one browser; not a one-person-one-vote guarantee.
-        existing = self.current_user(con)
-        if existing:
-            return existing, None
-        # No IP or identifying data is stored in the users table.
-        random_id = secrets.token_urlsafe(32)
-        label = 'Khách ẩn danh'
-        pid = con.execute("INSERT INTO participants(label, code_hash, role, created_at) VALUES(?, ?, 'voter', ?)", (label, digest(random_id), utcnow())).lastrowid
-        session = secrets.token_urlsafe(32)
-        csrf = secrets.token_urlsafe(24)
-        con.execute('INSERT INTO sessions(token_hash,participant_id,csrf_token,expires_at) VALUES(?,?,?,?)',
-                    (digest(session), pid, csrf, int(time.time())+SESSION_AGE))
-        user = con.execute('''SELECT p.id,p.label,p.role,p.active,s.csrf_token
-                 FROM sessions s JOIN participants p ON p.id=s.participant_id
-                 WHERE s.token_hash=?''', (digest(session),)).fetchone()
-        return user, self.cookie_header(session)
-
-    def require(self, con, admin=False, mutate=False):
-        user = self.current_user(con)
-        if not user:
-            raise ApiError(401,'Phiên ẩn danh chưa được tạo. Vui lòng tải lại trang.')
-        if admin and user['role'] != 'admin':
-            raise ApiError(403,'Bạn không có quyền quản trị.')
-        if mutate:
-            provided = self.headers.get('X-CSRF-Token','')
-            if not hmac.compare_digest(provided, user['csrf_token']):
-                raise ApiError(403,'Phiên bảo mật không hợp lệ. Hãy tải lại trang.')
-        return user
-
-    def cookie_header(self, token, delete=False):
-        secure = '; Secure' if SECURE_COOKIES else ''
-        if delete:
-            return f'{COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0{secure}'
-        return f'{COOKIE}={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={SESSION_AGE}{secure}'
-
-    def handle_request(self, method):
-        try:
-            path = urllib.parse.urlparse(self.path).path
-            if method == 'GET' and path in CSS_JS:
-                name, content_type = CSS_JS[path]
-                fpath = ROOT / 'static' / name
-                return self.response(200, fpath.read_bytes(), ctype=content_type,
-                    headers={'Cache-Control':'no-cache'})
-            if not path.startswith('/api/'):
-                return self.response(404,{'error':'Không tìm thấy.'})
-            with db() as con:
-                if method == 'POST' and path == '/api/login':
-                    return self.login(con)
-                if method == 'GET' and path == '/api/me':
-                    user, cookie_header = self.anonymous_user(con)
-                    hdr = {'Set-Cookie':cookie_header} if cookie_header else None
-                    return self.response(200,{'user':participant_api(con,user)},hdr)
-                # Public, read-only directory and results. Phone numbers and user identities stay private.
-                if method == 'GET' and path == '/api/public/leaders':
-                    return self.get_leaders(con, {'id': -1, 'role': 'guest'})
-                if method == 'GET' and path == '/api/public/overview':
-                    return self.overview(con, {'id': -1, 'role': 'guest'})
-                if method == 'GET' and path == '/api/public/rankings':
-                    return self.rankings(con, {'id': -1, 'role': 'guest'})
-                if method == 'GET' and path == '/api/public/comments':
-                    return self.public_comments(con)
-                if method == 'POST' and path == '/api/logout':
-                    user = self.require(con,mutate=True)
-                    cookie = SimpleCookie(); cookie.load(self.headers.get('Cookie',''))
-                    con.execute('DELETE FROM sessions WHERE token_hash=?', (digest(cookie[COOKIE].value),))
-                    return self.response(200,{'ok':True},{'Set-Cookie':self.cookie_header('',True)})
-                user = self.require(con, mutate=(method!='GET'))
-                if method == 'GET' and path == '/api/leaders':
-                    return self.get_leaders(con, user)
-                if method == 'POST' and path == '/api/vote':
-                    return self.vote(con, user)
-                if method == 'DELETE' and path.startswith('/api/vote/'):
-                    return self.delete_vote(con,user,path.removeprefix('/api/vote/'))
-                if method == 'GET' and path == '/api/overview':
-                    return self.overview(con,user)
-                if method == 'GET' and path == '/api/rankings':
-                    return self.rankings(con,user)
-                if method == 'GET' and path == '/api/comments':
-                    return self.list_comments(con,user)
-                if method == 'POST' and path == '/api/comments':
-                    return self.add_comment(con,user)
-                m = re.fullmatch(r'/api/comments/(\d+)',path)
-                if method == 'DELETE' and m:
-                    return self.remove_comment(con,user,int(m.group(1)))
-                m = re.fullmatch(r'/api/comments/(\d+)/report',path)
-                if method == 'POST' and m:
-                    return self.report_comment(con,user,int(m.group(1)))
-                if path.startswith('/api/admin/'):
-                    self.require(con, admin=True)
-                    return self.admin_api(con,user,method,path)
-                raise ApiError(404,'Không tìm thấy chức năng.')
-        except ApiError as ex:
-            self.response(ex.status,{'error':ex.msg})
-        except (BrokenPipeError,ConnectionResetError):
-            pass
-        except Exception as ex:
-            print('ERROR:',type(ex).__name__,ex,file=sys.stderr)
-            try:
-                self.response(500,{'error':'Lỗi máy chủ. Vui lòng thử lại.'})
-            except Exception:
-                pass
-
-    def do_GET(self): self.handle_request('GET')
-    def do_POST(self): self.handle_request('POST')
-    def do_PUT(self): self.handle_request('PUT')
-    def do_DELETE(self): self.handle_request('DELETE')
-
-    def login(self,con):
-        if rate_limit(self.client_address[0]):
-            raise ApiError(429,'Đăng nhập quá nhiều lần. Hãy thử lại sau 5 phút.')
-        data = self.content_json()
-        role = data.get('role','voter')
-        if role != 'admin':
-            raise ApiError(400,'Chỉ quản trị viên cần đăng nhập.')
-        token = safe_text(data.get('code',''),200)
-        if len(token) < 4:
-            raise ApiError(400,'Vui lòng nhập mã đăng nhập.')
-        if role == 'admin':
-            row = con.execute("SELECT * FROM participants WHERE role='admin' AND active=1 LIMIT 1").fetchone()
-            good = bool(row and verify_password(token,row['code_hash']))
-        else:
-            row = con.execute("SELECT * FROM participants WHERE role='voter' AND active=1 AND code_hash=?",
-                              (digest(token.upper()),)).fetchone()
-            good = bool(row)
-        if not good:
-            raise ApiError(401,'Mã hoặc mật khẩu không đúng.')
-        session = secrets.token_urlsafe(32)
-        csrf = secrets.token_urlsafe(24)
-        con.execute('INSERT INTO sessions(token_hash,participant_id,csrf_token,expires_at) VALUES(?,?,?,?)',
-                    (digest(session),row['id'],csrf,int(time.time())+SESSION_AGE))
-        return self.response(200,{'user':{'id':row['id'],'label':row['label'],'role':row['role'],'csrf':csrf}},
-            {'Set-Cookie':self.cookie_header(session)})
-
-    def get_leaders(self,con,user):
-        rows = con.execute('SELECT * FROM leaders WHERE active=1 ORDER BY ward,area,name').fetchall()
-        agg, own = leader_stats(con,user['id'])
-        comment_totals={r['leader_id']:r['cnt'] for r in con.execute("SELECT leader_id, COUNT(*) cnt FROM comments WHERE status='approved' GROUP BY leader_id")}
-        resp=[]
-        for r in rows:
-            stats=agg.get(r['id'])
-            n=stats['total'] if stats else 0
-            reveal=(n >= MIN_PUBLIC_VOTES or user['role']=='admin')
-            info={'id':r['id'],'name':r['name'],'area':r['area'], 'ward':r['ward'],
-                  'aliases':json.loads(r['aliases']),'my_vote':own.get(r['id']),
-                  'votes':n,'revealed':reveal,'comments':comment_totals.get(r['id'],0),
-                  'counts':[stats['n'+str(i)] for i in range(1,5)] if stats and reveal else None,
-                  'score':stats['score'] if stats and reveal else None}
-            if user['role']=='admin':
-                info.update({'phone':r['phone'],'phone_alt':r['phone_alt'],'source':r['source']})
-            resp.append(info)
-        return self.response(200,{'leaders':resp,'minimum':MIN_PUBLIC_VOTES})
-
-    def overview(self,con,user):
-        row=con.execute('SELECT COUNT(*) AS voters FROM participants WHERE role=\'voter\' AND active=1').fetchone()
-        count=con.execute('SELECT COUNT(*) FROM votes').fetchone()[0]
-        unique_voters=con.execute('SELECT COUNT(DISTINCT participant_id) FROM votes').fetchone()[0]
-        wards={w:0 for w in ALLOWED_WARDS}
-        wards.update({r['ward']:r['cnt'] for r in con.execute('SELECT ward,COUNT(*) AS cnt FROM leaders WHERE active=1 GROUP BY ward') if r['ward'] in wards})
-        return self.response(200,{'total_votes':count,'participating_voters':unique_voters,
-           'voter_accounts':row['voters'] if user['role']=='admin' else None,
-           'wards':wards,'leader_count':sum(wards.values()),'minimum':MIN_PUBLIC_VOTES})
-
-    def vote(self,con,user):
-        if user['role'] != 'voter':
-            raise ApiError(403,'Quản trị viên không tham gia bình chọn.')
-        data=self.content_json()
-        lid=safe_text(data.get('leader_id',''),36)
-        level=data.get('level')
-        if type(level) is not int or level not in (1,2,3,4):
-            raise ApiError(400,'Mức đánh giá phải từ 1 đến 4.')
-        if not con.execute('SELECT 1 FROM leaders WHERE id=? AND active=1',(lid,)).fetchone():
-            raise ApiError(404,'Không tìm thấy tổ trưởng.')
-        con.execute('''INSERT INTO votes(participant_id,leader_id,level,updated_at) VALUES(?,?,?,?)
-           ON CONFLICT(participant_id,leader_id) DO UPDATE SET level=excluded.level,
-           updated_at=excluded.updated_at''', (user['id'],lid,level,utcnow()))
-        return self.response(200,{'ok':True,'message':'Đã ghi nhận bình chọn. Bạn có thể thay đổi lựa chọn.'})
-
-    def delete_vote(self,con,user,lid):
-        if user['role'] != 'voter':
-            raise ApiError(403,'Tài khoản này không tham gia bình chọn.')
-        con.execute('DELETE FROM votes WHERE participant_id=? AND leader_id=?',(user['id'],lid))
-        return self.response(200,{'ok':True})
-
-    def rankings(self,con,user):
-        # Show only sufficient sample sizes. Equal weight for each unique participant.
-        rows=con.execute('''SELECT l.id,l.name,l.area,l.ward, COUNT(v.level) votes,
-            SUM(CASE WHEN v.level=1 THEN 1 ELSE 0 END) easy,
-            SUM(CASE WHEN v.level=3 THEN 1 ELSE 0 END) changing,
-            SUM(CASE WHEN v.level=4 THEN 1 ELSE 0 END) difficult,
-            ROUND(AVG(CASE WHEN v.level IS NOT NULL THEN 5.0-v.level END),2) score
-            FROM leaders l LEFT JOIN votes v ON l.id=v.leader_id
-            WHERE l.active=1 GROUP BY l.id HAVING COUNT(v.level)>=?''',
-            (MIN_RANK_VOTES,)).fetchall()
-        people=[]
-        for r in rows:
-            x=dict(r)
-            x['easy_pct']=round(100*x['easy']/x['votes'],1)
-            x['hard_pct']=round(100*(x['changing']+x['difficult'])/x['votes'],1)
-            x['severe_pct']=round(100*x['difficult']/x['votes'],1)
-            people.append(x)
-        easy=sorted(people,key=lambda x:(-x['easy_pct'],-x['score'],-x['votes'],x['name']))[:10]
-        difficult=sorted(people,key=lambda x:(-x['hard_pct'],-x['severe_pct'],-x['votes'],x['name']))[:10]
-        return self.response(200,{'easy':easy,'difficult':difficult,'minimum_votes':MIN_RANK_VOTES,
-            'eligible_count':len(people)})
-
-    def public_comments(self,con):
-        query=urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
-        lid=safe_text((query.get('leader_id') or [''])[0],48)
-        if not con.execute('SELECT 1 FROM leaders WHERE id=? AND active=1',(lid,)).fetchone():
-            raise ApiError(404,'Không tìm thấy tổ trưởng.')
-        rows=con.execute("SELECT id,body,created_at FROM comments WHERE leader_id=? AND status='approved' ORDER BY id DESC LIMIT 100",(lid,)).fetchall()
-        total=con.execute("SELECT COUNT(*) FROM comments WHERE leader_id=? AND status='approved'",(lid,)).fetchone()[0]
-        return self.response(200,{'comments':[dict(r, status='approved',is_mine=False) for r in rows], 'total_approved':total})
-
-    def list_comments(self,con,user):
-        query=urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
-        lid=safe_text((query.get('leader_id') or [''])[0],48)
-        if not con.execute('SELECT 1 FROM leaders WHERE id=? AND active=1',(lid,)).fetchone():
-            raise ApiError(404,'Không tìm thấy tổ trưởng.')
-        # Published comments and own queued comments; author details are never returned.
-        rows=con.execute('''SELECT c.id,c.body,c.status,c.created_at,
-           (c.participant_id=?) AS is_mine,
-           (SELECT COUNT(*) FROM comment_reports cr WHERE cr.comment_id=c.id) AS reports
-           FROM comments c WHERE c.leader_id=? AND
-           (c.status='approved' OR c.participant_id=?) ORDER BY c.id DESC LIMIT 100''',
-           (user['id'],lid,user['id'])).fetchall()
-        data=[]
-        for r in rows:
-            o=dict(r)
-            o.pop('reports',None)
-            o['is_mine']=bool(o['is_mine'])
-            data.append(o)
-        num=con.execute("SELECT COUNT(*) FROM comments WHERE leader_id=? AND status='approved'",(lid,)).fetchone()[0]
-        return self.response(200,{'comments':data,'total_approved':num})
-
-    def add_comment(self,con,user):
-        if user['role'] != 'voter':
-            raise ApiError(403,'Không thể bình luận bằng tài khoản quản trị.')
-        data=self.content_json()
-        lid=safe_text(data.get('leader_id',''),48)
-        body=data.get('body')
-        if not isinstance(body,str):
-            raise ApiError(400,'Bình luận không hợp lệ.')
-        body=re.sub(r'\s+',' ',body).strip()
-        if len(body)<5 or len(body)>MAX_COMMENT_CHARS:
-            raise ApiError(400,'Bình luận phải dài từ 5 đến 700 ký tự.')
-        if re.search(r'(?:https?://|www\.|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,})',body,re.I):
-            raise ApiError(400,'Không đăng đường dẫn hay email trong bình luận.')
-        if re.search(r'(?<!\d)(?:\+?84|0)\s*[1-9](?:[\s.\-]*\d){7,10}(?!\d)',body):
-            raise ApiError(400,'Vui lòng không đăng số điện thoại trong bình luận.')
-        if not con.execute('SELECT 1 FROM leaders WHERE id=? AND active=1',(lid,)).fetchone():
-            raise ApiError(404,'Không tìm thấy tổ trưởng.')
-        recent=con.execute('''SELECT created_at FROM comments WHERE participant_id=?
-            ORDER BY id DESC LIMIT 1''',(user['id'],)).fetchone()
-        now=datetime.now(timezone.utc)
-        if recent and (now-datetime.fromisoformat(recent['created_at'])).total_seconds()<40:
-            raise ApiError(429,'Bạn có thể gửi bình luận tiếp theo sau 40 giây.')
-        qty=con.execute('''SELECT COUNT(*) FROM comments WHERE participant_id=? AND leader_id=?
-             AND created_at>=?''',(user['id'],lid,datetime.fromtimestamp(time.time()-86400,timezone.utc).isoformat(timespec='seconds'))).fetchone()[0]
-        if qty>=3:
-            raise ApiError(429,'Tối đa 3 bình luận cho một tổ trưởng trong 24 giờ.')
-        cursor=con.execute('''INSERT INTO comments(leader_id,participant_id,body,status,created_at)
-             VALUES(?,?,?,'pending',?)''',(lid,user['id'],body,utcnow()))
-        return self.response(201,{'ok':True,'id':cursor.lastrowid,'status':'pending',
-             'message':'Đã nhận bình luận ẩn danh. Nội dung sẽ hiển thị sau khi được duyệt.'})
-
-    def remove_comment(self,con,user,cid):
-        row=con.execute('SELECT participant_id FROM comments WHERE id=?',(cid,)).fetchone()
-        if not row or (row['participant_id']!=user['id'] and user['role']!='admin'):
-            raise ApiError(404,'Không tìm thấy bình luận của bạn.')
-        con.execute('DELETE FROM comments WHERE id=?',(cid,))
-        return self.response(200,{'ok':True})
-
-    def report_comment(self,con,user,cid):
-        if user['role']!='voter':
-            raise ApiError(403,'Không thể báo cáo bằng tài khoản quản trị.')
-        row=con.execute("SELECT participant_id,status FROM comments WHERE id=?",(cid,)).fetchone()
-        if not row or row['status']!='approved':
-            raise ApiError(404,'Bình luận đã không còn công khai.')
-        if row['participant_id']==user['id']:
-            raise ApiError(400,'Không thể báo cáo bình luận của chính bạn.')
-        con.execute('INSERT OR IGNORE INTO comment_reports(comment_id,participant_id,created_at) VALUES(?,?,?)',(cid,user['id'],utcnow()))
-        reported=con.execute('SELECT COUNT(*) FROM comment_reports WHERE comment_id=?',(cid,)).fetchone()[0]
-        if reported>=2:
-            con.execute("UPDATE comments SET status='hidden',moderated_at=? WHERE id=?",(utcnow(),cid))
-        return self.response(200,{'ok':True,'message':'Đã ghi nhận báo cáo. Cảm ơn bạn.'})
-
-    def admin_api(self,con,user,method,path):
-        if method=='GET' and path=='/api/admin/comments':
-            rows=con.execute('''SELECT c.id,c.leader_id,l.name AS leader_name,l.area,l.ward,
-                 c.body,c.status,c.created_at,
-                 (SELECT COUNT(*) FROM comment_reports r WHERE r.comment_id=c.id) reports
-                 FROM comments c JOIN leaders l ON l.id=c.leader_id
-                 ORDER BY CASE c.status WHEN 'pending' THEN 0 WHEN 'hidden' THEN 1 ELSE 2 END,
-                 c.id DESC LIMIT 500''').fetchall()
-            return self.response(200,{'comments':[dict(r) for r in rows]})
-        m=re.fullmatch(r'/api/admin/comments/(\d+)',path)
-        if method=='PUT' and m:
-            data=self.content_json()
-            status=data.get('status')
-            if status not in ('approved','rejected','hidden','pending'):
-                raise ApiError(400,'Trạng thái duyệt không hợp lệ.')
-            cur=con.execute('UPDATE comments SET status=?,moderated_at=? WHERE id=?',
-               (status,utcnow(),int(m.group(1))))
-            if cur.rowcount==0:
-                raise ApiError(404,'Bình luận không tồn tại.')
-            return self.response(200,{'ok':True})
-        if method=='GET' and path=='/api/admin/export.csv':
-            out=io.StringIO()
-            writer=csv.writer(out)
-            writer.writerow(['Mã','Họ tên tổ trưởng','Địa bàn','Phường','Tổng phiếu'] + list(LEVELS) + ['Điểm thuận lợi (1-4)'])
-            stats,_=leader_stats(con,user['id'])
-            for r in con.execute('SELECT id,name,area,ward FROM leaders WHERE active=1 ORDER BY ward,area'):
-                st=stats.get(r['id'])
-                writer.writerow([r['id'],r['name'],r['area'],r['ward'],st['total'] if st else 0] +
-                    ([st[f'n{i}'] for i in range(1,5)] if st else [0]*4) + [st['score'] if st else ''])
-            data=('\ufeff'+out.getvalue()).encode('utf-8')
-            return self.response(200,data,{'Content-Disposition':'attachment; filename="ket_qua_binh_chon.csv"'},
-                                 ctype='text/csv; charset=utf-8')
-        if method=='GET' and path=='/api/admin/leaders':
-            rows=con.execute('SELECT * FROM leaders ORDER BY active DESC, ward,area').fetchall()
-            return self.response(200,{'leaders':[{'id':r['id'],'name':r['name'],'area':r['area'],
-              'ward':r['ward'],'phone':r['phone'],'phone_alt':r['phone_alt'],
-              'aliases':json.loads(r['aliases']),'active':bool(r['active'])} for r in rows]})
-        if method=='POST' and path=='/api/admin/leaders':
-            data=self.content_json()
-            clean=self.check_leader_data(data)
-            lid='NEW-'+secrets.token_hex(5).upper()
-            con.execute('''INSERT INTO leaders(id,name,area,ward,phone,phone_alt,aliases,source,created_at)
-              VALUES(?,?,?,?,?,?,?,?,?)''',(lid,*clean,'Thêm thủ công',utcnow()))
-            return self.response(201,{'id':lid,'ok':True})
-        m=re.fullmatch(r'/api/admin/leaders/([A-Za-z0-9-]+)',path)
-        if method=='PUT' and m:
-            data=self.content_json()
-            clean=self.check_leader_data(data)
-            if not con.execute('SELECT 1 FROM leaders WHERE id=?',(m.group(1),)).fetchone():
-                raise ApiError(404,'Không tìm thấy tổ trưởng.')
-            active=data.get('active',True)
-            if type(active) is not bool:
-                raise ApiError(400,'Trạng thái không hợp lệ.')
-            con.execute('''UPDATE leaders SET name=?,area=?,ward=?,phone=?,phone_alt=?,aliases=?,active=? WHERE id=?''',
-                        (*clean,int(active),m.group(1)))
-            return self.response(200,{'ok':True})
-        raise ApiError(404,'Không tìm thấy chức năng quản trị.')
-
-    def check_leader_data(self,data):
-        name=safe_text(data.get('name'),90)
-        area=safe_text(data.get('area'),100)
-        ward=safe_text(data.get('ward'),100)
-        phone=safe_text(data.get('phone',''),30)
-        alt=safe_text(data.get('phone_alt',''),30)
-        aliases=data.get('aliases',[])
-        if not name or not area or not ward:
-            raise ApiError(400,'Cần đủ tên tổ trưởng, tổ/thôn/xóm và xã/phường.')
-        if ward not in ALLOWED_WARDS:
-            raise ApiError(400,'Chỉ cho phép 6 phường trong bản đồ. Vui lòng chọn tên phường từ danh sách.')
-        if not isinstance(aliases,list) or len(aliases)>20:
-            raise ApiError(400,'Danh sách tên địa bàn cũ không hợp lệ.')
-        aliases=[safe_text(a,90) for a in aliases if isinstance(a,str)]
-        return (name,area,ward,phone,alt,json.dumps(aliases,ensure_ascii=False))
+            if exception is None:
+                db.commit()
+            else:
+                db.rollback()
+        finally:
+            db.close()
 
 
-def main():
-    global SECURE_COOKIES
-    parser=argparse.ArgumentParser(description='He thong binh chon to truong dan pho')
-    parser.add_argument('--host',default='0.0.0.0')
-    parser.add_argument('--port',type=int,default=int(os.environ.get('PORT', '8765')))
-    parser.add_argument('--no-browser',action='store_true')
-    parser.add_argument('--reset-admin',action='store_true')
-    parser.add_argument('--secure-cookies',action='store_true',help='Dung khi truy cap qua HTTPS reverse proxy')
-    parser.add_argument('--cert',help='Duong dan TLS certificate (PEM)')
-    parser.add_argument('--key',help='Duong dan TLS private key (PEM)')
-    args=parser.parse_args()
-    SECURE_COOKIES=args.secure_cookies or bool(args.cert)
-    setup_db()
-    if args.reset_admin:
-        reset_admin_password()
-        return
-    server=ThreadingHTTPServer((args.host,args.port),Handler)
-    server.daemon_threads=True
-    scheme='http'
-    if args.cert and args.key:
-        ctx=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        ctx.minimum_version=ssl.TLSVersion.TLSv1_2
-        ctx.load_cert_chain(args.cert,args.key)
-        server.socket=ctx.wrap_socket(server.socket,server_side=True)
-        scheme='https'
-    print(f'\nSERVER: {scheme}://127.0.0.1:{args.port}/')
-    try:
-        ips=socket.gethostbyname_ex(socket.gethostname())[2]
-        for ip in ips:
-            if not ip.startswith('127.'):
-                print(f'ANDROID (cung Wi-Fi): {scheme}://{ip}:{args.port}/')
-    except OSError: pass
-    print('Ghi chu: dung HTTPS truoc khi trien khai qua Internet. Ctrl+C de dung.\n',flush=True)
-    if not args.no_browser:
-        threading.Timer(0.8,lambda:webbrowser.open(f'{scheme}://127.0.0.1:{args.port}/')).start()
-    try: server.serve_forever(poll_interval=.25)
-    except KeyboardInterrupt: print('\nDang dung may chu...')
-    finally: server.server_close()
+@app.after_request
+def sec_headers(resp):
+    resp.headers['Cache-Control'] = 'no-store'
+    resp.headers['X-Content-Type-Options'] = 'nosniff'
+    resp.headers['Referrer-Policy'] = 'no-referrer'
+    resp.headers['X-Frame-Options'] = 'DENY'
+    resp.headers['Content-Security-Policy'] = (
+        "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; "
+        "form-action 'self'; img-src 'self' data:; connect-src 'self' https://raw.githubusercontent.com; "
+        "script-src 'self'; style-src 'self'")
+    return resp
 
 
-if __name__=='__main__':main()
+@app.errorhandler(PermissionError)
+def denied(exc):
+    return fail(str(exc), 403)
+
+
+@app.errorhandler(ValueError)
+def invalid(exc):
+    return fail(str(exc), 400)
+
+
+@app.errorhandler(Exception)
+def server_error(exc):
+    from werkzeug.exceptions import HTTPException
+    if isinstance(exc, HTTPException):
+        return fail(exc.description, exc.code)
+    app.logger.exception('Lỗi máy chủ')
+    return fail('Máy chủ chưa kết nối được cơ sở dữ liệu hoặc gặp lỗi xử lý.', 503)
+
+
+@app.get('/')
+def index():
+    return send_from_directory(ROOT / 'static', 'index.html')
+
+
+@app.get('/static/<path:name>')
+def static_file(name):
+    if name not in ('app.js', 'style.css'):
+        return fail('Không tìm thấy tệp.', 404)
+    return send_from_directory(ROOT / 'static', name)
+
+
+@app.get('/api/health')
+def health():
+    n = scalar('SELECT COUNT(*) FROM app.leaders WHERE active=TRUE')
+    return jsonify(ok=True, database='postgresql', leaders=n)
+
+
+@app.get('/api/me')
+def me():
+    user = current_user()
+    if user:
+        return jsonify(user=user_object(user))
+    # Mỗi trình duyệt mới có một phiên ẩn danh. Không phải xác minh danh tính thật.
+    arbitrary = secrets.token_urlsafe(32)
+    token = secrets.token_urlsafe(32)
+    csrf = secrets.token_urlsafe(24)
+    pid = scalar('''INSERT INTO app.participants(label,code_hash,role)
+                VALUES ('Khách ẩn danh',%s,'voter') RETURNING id''', (digest(arbitrary),))
+    g.db.execute('''INSERT INTO app.sessions(token_hash,participant_id,csrf_token,expires_at)
+                 VALUES (%s,%s,%s,%s)''', (digest(token), pid, csrf, now() + timedelta(days=SESSION_DAYS)))
+    reply = make_response(jsonify(user={'id': pid, 'label': 'Khách ẩn danh',
+                                       'role': 'voter', 'csrf': csrf, 'voted': 0}))
+    return set_session(reply, token)
+
+
+@app.post('/api/login')
+def login():
+    body = payload()
+    if body.get('role') != 'admin':
+        return fail('Chỉ tài khoản quản trị viên cần đăng nhập.')
+    supplied = clean(body.get('code'), 200)
+    password = os.environ.get('ADMIN_PASSWORD', '')
+    if len(password) < 16:
+        return fail('Quản trị viên chưa được cấu hình mật khẩu bảo mật.', 503)
+    # Chống dò mật khẩu nhiều lần; phải chạy migration 02_BAO_VE_DANG_NHAP.sql.
+    remote_ip = request.headers.get('X-Forwarded-For', request.remote_addr or '')
+    remote_ip = remote_ip.split(',')[0].strip()
+    ip_hash = digest(password + '|' + remote_ip)
+    row = query('''INSERT INTO app.login_attempts(ip_hash,attempts,window_start)
+           VALUES (%s,1,now()) ON CONFLICT(ip_hash) DO UPDATE SET
+           attempts=CASE WHEN app.login_attempts.window_start < now()-interval '15 minutes'
+                     THEN 1 ELSE app.login_attempts.attempts+1 END,
+           window_start=CASE WHEN app.login_attempts.window_start < now()-interval '15 minutes'
+                     THEN now() ELSE app.login_attempts.window_start END
+           RETURNING attempts''', (ip_hash,), one=True)
+    if row['attempts'] > 10:
+        return fail('Đăng nhập quá nhiều lần. Vui lòng thử lại sau 15 phút.', 429)
+    if not hmac.compare_digest(digest(supplied), digest(password)):
+        return fail('Mật khẩu không đúng.', 401)
+    # Một tài khoản quản trị riêng, không lưu mật khẩu quản trị trong database.
+    g.db.execute('''INSERT INTO app.participants(id,label,code_hash,role)
+             VALUES(-1,'Quản trị viên','admin-via-environment','admin')
+             ON CONFLICT(id) DO UPDATE SET active=TRUE''')
+    token = secrets.token_urlsafe(32)
+    csrf = secrets.token_urlsafe(24)
+    g.db.execute('''INSERT INTO app.sessions(token_hash,participant_id,csrf_token,expires_at)
+                 VALUES (%s,-1,%s,%s)''', (digest(token), csrf, now() + timedelta(days=SESSION_DAYS)))
+    reply = make_response(jsonify(user={'id':-1,'label':'Quản trị viên',
+                                       'role':'admin','csrf':csrf,'voted':0}))
+    return set_session(reply, token)
+
+
+@app.post('/api/logout')
+@protected(write=True)
+def logout():
+    token = request.cookies.get(COOKIE, '')
+    g.db.execute('DELETE FROM app.sessions WHERE token_hash=%s', (digest(token),))
+    reply = make_response(jsonify(ok=True))
+    reply.delete_cookie(COOKIE, path='/', secure=True, samesite='Strict')
+    return reply
+
+
+def stats_for(user):
+    counts = query('''SELECT leader_id,count(*)::int total,
+       count(*) FILTER(WHERE level=1)::int n1,
+       count(*) FILTER(WHERE level=2)::int n2,
+       count(*) FILTER(WHERE level=3)::int n3,
+       count(*) FILTER(WHERE level=4)::int n4,
+       round(avg(5.0-level),2)::float score FROM app.votes GROUP BY leader_id''')
+    own = (query('SELECT leader_id,level FROM app.votes WHERE participant_id=%s', (user['id'],))
+           if user else [])
+    return {r['leader_id']: r for r in counts}, {r['leader_id']:r['level'] for r in own}
+
+
+def leaders_response(user):
+    rows = query('SELECT * FROM app.leaders WHERE active=TRUE ORDER BY ward,area,name')
+    stats, own = stats_for(user)
+    comments = {r['leader_id']:r['n'] for r in query('''SELECT leader_id,count(*)::int n FROM app.comments
+                                     WHERE status='approved' GROUP BY leader_id''')}
+    data = []
+    for row in rows:
+        r = stats.get(row['id'])
+        n = r['total'] if r else 0
+        show = n >= MIN_PUBLIC or bool(user and user['role'] == 'admin')
+        leader = {'id':row['id'], 'name':row['name'], 'area':row['area'], 'ward':row['ward'],
+                  'aliases':row['aliases'], 'my_vote':own.get(row['id']), 'votes':n,
+                  'revealed':show,'comments':comments.get(row['id'],0),
+                  'counts':[r[f'n{i}'] for i in range(1,5)] if r and show else None,
+                  'score':r['score'] if r and show else None}
+        if user and user['role'] == 'admin':
+            leader.update(phone=row['phone'], phone_alt=row['phone_alt'], source=row['source'])
+        data.append(leader)
+    return jsonify(leaders=data, minimum=MIN_PUBLIC)
+
+
+@app.get('/api/public/leaders')
+def public_leaders():
+    return leaders_response(None)
+
+
+@app.get('/api/leaders')
+@protected()
+def leaders():
+    return leaders_response(require())
+
+
+def overview_response(user):
+    wards = {w:0 for w in WARDS}
+    wards.update({r['ward']:r['n'] for r in query('''SELECT ward,count(*)::int n
+                                 FROM app.leaders WHERE active=TRUE GROUP BY ward''')})
+    return jsonify(total_votes=scalar('SELECT count(*) FROM app.votes'),
+                   participating_voters=scalar('SELECT count(DISTINCT participant_id) FROM app.votes'),
+                   voter_accounts=(scalar("SELECT count(*) FROM app.participants WHERE role='voter'")
+                                   if user and user['role']=='admin' else None),
+                   wards=wards,leader_count=sum(wards.values()),minimum=MIN_PUBLIC)
+
+
+@app.get('/api/public/overview')
+def public_overview():
+    return overview_response(None)
+
+
+@app.get('/api/overview')
+@protected()
+def overview():
+    return overview_response(require())
+
+
+def ranks_response():
+    rows = query('''SELECT l.id,l.name,l.area,l.ward,count(v.level)::int votes,
+        count(*) FILTER (WHERE v.level=1)::int easy,
+        count(*) FILTER (WHERE v.level=3)::int changing,
+        count(*) FILTER (WHERE v.level=4)::int difficult,
+        round(avg(5.0-v.level),2)::float score
+        FROM app.leaders l LEFT JOIN app.votes v ON v.leader_id=l.id
+        WHERE l.active=TRUE GROUP BY l.id HAVING count(v.level)>=%s''', (MIN_RANK,))
+    for row in rows:
+        row['easy_pct']=round(100*row['easy']/row['votes'],1)
+        row['hard_pct']=round(100*(row['changing']+row['difficult'])/row['votes'],1)
+        row['severe_pct']=round(100*row['difficult']/row['votes'],1)
+    easy=sorted(rows,key=lambda r:(-r['easy_pct'],-r['score'],-r['votes'],r['name']))[:10]
+    hard=sorted(rows,key=lambda r:(-r['hard_pct'],-r['severe_pct'],-r['votes'],r['name']))[:10]
+    return jsonify(easy=easy,difficult=hard,minimum_votes=MIN_RANK,eligible_count=len(rows))
+
+
+@app.get('/api/public/rankings')
+def public_ranks():
+    return ranks_response()
+
+
+@app.get('/api/rankings')
+@protected()
+def ranks():
+    return ranks_response()
+
+
+def checked_leader(lid):
+    lid=clean(lid, 48)
+    if not query('SELECT 1 FROM app.leaders WHERE id=%s AND active=TRUE', (lid,), one=True):
+        raise ValueError('Không tìm thấy tổ trưởng.')
+    return lid
+
+
+@app.post('/api/vote')
+@protected(write=True)
+def vote():
+    user = require()
+    if user['role']!='voter':
+        return fail('Quản trị viên không tham gia bình chọn.',403)
+    data = payload()
+    level = data.get('level')
+    if type(level) is not int or level not in (1,2,3,4):
+        return fail('Chọn một trong bốn mức đánh giá.')
+    lid = checked_leader(data.get('leader_id'))
+    g.db.execute('''INSERT INTO app.votes(participant_id,leader_id,level,updated_at)
+              VALUES (%s,%s,%s,now()) ON CONFLICT(participant_id,leader_id)
+              DO UPDATE SET level=excluded.level,updated_at=excluded.updated_at''',
+              (user['id'],lid,level))
+    return jsonify(ok=True,message='Đã lưu phiếu. Bạn có thể thay đổi lựa chọn.')
+
+
+@app.delete('/api/vote/<lid>')
+@protected(write=True)
+def unvote(lid):
+    user=require()
+    g.db.execute('DELETE FROM app.votes WHERE participant_id=%s AND leader_id=%s',
+                 (user['id'],clean(lid,48)))
+    return jsonify(ok=True)
+
+
+def iso_row(row, *keys):
+    row = dict(row)
+    for key in keys:
+        if row.get(key) is not None:
+            row[key] = row[key].isoformat()
+    return row
+
+
+def comments_response(user):
+    lid = checked_leader(request.args.get('leader_id'))
+    if user:
+        rows=query('''SELECT c.id,c.body,c.status,c.created_at,
+            (c.participant_id=%s) AS is_mine FROM app.comments c
+            WHERE c.leader_id=%s AND (c.status='approved' OR c.participant_id=%s)
+            ORDER BY id DESC LIMIT 100''', (user['id'],lid,user['id']))
+    else:
+        rows=query('''SELECT id,body,status,created_at,FALSE as is_mine
+               FROM app.comments WHERE leader_id=%s AND status='approved'
+               ORDER BY id DESC LIMIT 100''', (lid,))
+    n=scalar("SELECT count(*) FROM app.comments WHERE leader_id=%s AND status='approved'",(lid,))
+    return jsonify(comments=[iso_row(r,'created_at') for r in rows],total_approved=n)
+
+
+@app.get('/api/public/comments')
+def public_comments():
+    return comments_response(None)
+
+
+@app.get('/api/comments')
+@protected()
+def comments():
+    return comments_response(require())
+
+
+@app.post('/api/comments')
+@protected(write=True)
+def comment():
+    user=require()
+    if user['role']!='voter':
+        return fail('Quản trị viên không thể gửi đánh giá ẩn danh.',403)
+    data=payload()
+    lid=checked_leader(data.get('leader_id'))
+    text=clean(data.get('body'),2000)
+    if not (5<=len(text)<=700):
+        return fail('Bình luận phải dài 5–700 ký tự.')
+    if re.search(r'https?://|www\.|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}',text,re.I):
+        return fail('Không đăng liên kết hoặc email.')
+    if re.search(r'(?<!\d)(?:\+?84|0)\s*[1-9](?:[\s.\-]*\d){7,10}(?!\d)',text):
+        return fail('Không đăng số điện thoại cá nhân.')
+    recent=scalar('SELECT max(created_at) FROM app.comments WHERE participant_id=%s',(user['id'],))
+    if recent and (now()-recent).total_seconds()<40:
+        return fail('Vui lòng gửi bình luận tiếp theo sau 40 giây.',429)
+    q=scalar('''SELECT count(*) FROM app.comments WHERE participant_id=%s AND leader_id=%s
+                AND created_at>=now()-interval '24 hours' ''',(user['id'],lid))
+    if q>=3:
+        return fail('Tối đa 3 bình luận cho một tổ trưởng trong 24 giờ.',429)
+    cid=scalar('''INSERT INTO app.comments(leader_id,participant_id,body)
+            VALUES(%s,%s,%s) RETURNING id''',(lid,user['id'],text))
+    return jsonify(ok=True,id=cid,status='pending',
+                   message='Đã nhận bình luận. Chỉ công khai sau khi quản trị viên duyệt.'),201
+
+
+@app.delete('/api/comments/<int:cid>')
+@protected(write=True)
+def remove_comment(cid):
+    user=require()
+    row=query('SELECT participant_id FROM app.comments WHERE id=%s',(cid,),one=True)
+    if not row or (row['participant_id']!=user['id'] and user['role']!='admin'):
+        return fail('Bình luận không tồn tại hoặc không thuộc về bạn.',404)
+    g.db.execute('DELETE FROM app.comments WHERE id=%s',(cid,))
+    return jsonify(ok=True)
+
+
+@app.post('/api/comments/<int:cid>/report')
+@protected(write=True)
+def report(cid):
+    user=require()
+    if user['role']!='voter':
+        return fail('Quản trị viên không gửi báo cáo.',403)
+    c=query('SELECT participant_id,status FROM app.comments WHERE id=%s',(cid,),one=True)
+    if not c or c['status']!='approved':
+        return fail('Bình luận đã không còn công khai.',404)
+    if c['participant_id']==user['id']:
+        return fail('Không thể báo cáo bình luận của chính mình.')
+    g.db.execute('''INSERT INTO app.comment_reports(comment_id,participant_id)
+                VALUES(%s,%s) ON CONFLICT DO NOTHING''',(cid,user['id']))
+    num=scalar('SELECT count(*) FROM app.comment_reports WHERE comment_id=%s',(cid,))
+    if num>=2:
+        g.db.execute("UPDATE app.comments SET status='hidden',moderated_at=now() WHERE id=%s",(cid,))
+    return jsonify(ok=True,message='Đã ghi nhận báo cáo.')
+
+
+def leader_input(data):
+    name=clean(data.get('name'),90)
+    area=clean(data.get('area'),100)
+    ward=clean(data.get('ward'),100)
+    phone=clean(data.get('phone',''),30)
+    phone_alt=clean(data.get('phone_alt',''),30)
+    aliases=data.get('aliases',[])
+    if not name or not area or ward not in WARDS:
+        raise ValueError('Hãy nhập tên, tổ/thôn và chọn một trong 6 phường.')
+    if not isinstance(aliases,list) or len(aliases)>20:
+        raise ValueError('Địa bàn cũ không hợp lệ.')
+    aliases=[clean(x,90) for x in aliases if isinstance(x,str)]
+    return name,area,ward,phone,phone_alt,json.dumps(aliases,ensure_ascii=False)
+
+
+@app.get('/api/admin/leaders')
+@protected(admin=True)
+def admin_leaders():
+    rows=query('''SELECT id,name,area,ward,phone,phone_alt,aliases,active
+                  FROM app.leaders ORDER BY active DESC,ward,area''')
+    return jsonify(leaders=rows)
+
+
+@app.post('/api/admin/leaders')
+@protected(admin=True,write=True)
+def new_leader():
+    vals=leader_input(payload())
+    lid='NEW-'+secrets.token_hex(5).upper()
+    g.db.execute('''INSERT INTO app.leaders(id,name,area,ward,phone,phone_alt,aliases,source)
+             VALUES(%s,%s,%s,%s,%s,%s,%s::jsonb,'Thêm thủ công')''',(lid,*vals))
+    return jsonify(ok=True,id=lid),201
+
+
+@app.put('/api/admin/leaders/<lid>')
+@protected(admin=True,write=True)
+def edit_leader(lid):
+    data=payload()
+    vals=leader_input(data)
+    active=data.get('active',True)
+    if type(active) is not bool:
+        return fail('Trạng thái không hợp lệ.')
+    cur=g.db.execute('''UPDATE app.leaders SET name=%s,area=%s,ward=%s,phone=%s,
+            phone_alt=%s,aliases=%s::jsonb,active=%s,updated_at=now() WHERE id=%s''',
+            (*vals,active,clean(lid,64)))
+    if cur.rowcount==0:
+        return fail('Không tìm thấy tổ trưởng.',404)
+    return jsonify(ok=True)
+
+
+@app.get('/api/admin/comments')
+@protected(admin=True)
+def moderation_queue():
+    rows=query('''SELECT c.id,c.leader_id,l.name leader_name,l.area,l.ward,
+          c.body,c.status,c.created_at,
+          (SELECT count(*) FROM app.comment_reports cr WHERE cr.comment_id=c.id) reports
+          FROM app.comments c JOIN app.leaders l ON l.id=c.leader_id
+          ORDER BY CASE c.status WHEN 'pending' THEN 0 WHEN 'hidden' THEN 1 ELSE 2 END,
+          c.id DESC LIMIT 500''')
+    return jsonify(comments=[iso_row(r,'created_at') for r in rows])
+
+
+@app.put('/api/admin/comments/<int:cid>')
+@protected(admin=True,write=True)
+def moderate(cid):
+    status=payload().get('status')
+    if status not in ('approved','rejected','hidden','pending'):
+        return fail('Trạng thái duyệt không hợp lệ.')
+    cur=g.db.execute('UPDATE app.comments SET status=%s,moderated_at=now() WHERE id=%s',(status,cid))
+    if cur.rowcount==0:
+        return fail('Bình luận không tồn tại.',404)
+    return jsonify(ok=True)
+
+
+@app.get('/api/admin/export.csv')
+@protected(admin=True)
+def export_csv():
+    ranks, _=stats_for(require())
+    output=io.StringIO()
+    writer=csv.writer(output)
+    writer.writerow(['Mã','Tổ trưởng','Địa bàn','Phường','Tổng phiếu',*LEVELS,'Điểm (1-4)'])
+    for r in query('SELECT id,name,area,ward FROM app.leaders WHERE active=TRUE ORDER BY ward,area'):
+        s=ranks.get(r['id'])
+        writer.writerow([r['id'],r['name'],r['area'],r['ward'],s['total'] if s else 0]
+                        + ([s[f'n{i}'] for i in range(1,5)] if s else [0]*4)
+                        + ([s['score']] if s else ['']))
+    return Response('\ufeff'+output.getvalue(),mimetype='text/csv; charset=utf-8',
+                    headers={'Content-Disposition':'attachment; filename="ket_qua_binh_chon.csv"'})
+
+
+if __name__=='__main__':
+    app.run(host='127.0.0.1',port=int(os.getenv('PORT','8765')),debug=False)
