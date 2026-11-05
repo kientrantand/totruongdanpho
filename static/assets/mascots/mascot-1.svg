@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 410" role="img" aria-label="Nhân vật ông tổ trưởng hoạt hình, biểu cảm mức 1">
+<defs><linearGradient id="shirt" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#e2ba7f"/><stop offset="1" stop-color="#a87342"/></linearGradient><radialGradient id="skin"><stop stop-color="#ffe3c0"/><stop offset="1" stop-color="#f2b98c"/></radialGradient><filter id="shadow"><feDropShadow dx="0" dy="5" stdDeviation="6" flood-opacity=".17"/></filter></defs>
+<g filter="url(#shadow)"><ellipse cx="181" cy="397" rx="101" ry="11" fill="#64748b" opacity=".22"/>
+<path d="M145 323 L140 378 L165 380 L177 327 M194 325 L196 378 L222 380 L218 325" stroke="#33445a" stroke-width="32" stroke-linecap="round" fill="none"/>
+<ellipse cx="147" cy="382" rx="32" ry="12" fill="#5e463a"/><ellipse cx="212" cy="382" rx="32" ry="12" fill="#5e463a"/>
+<path d="M126 230 Q176 218 230 232 L249 342 Q179 371 105 343 Z" fill="url(#shirt)" stroke="#956e46" stroke-width="4"/>
+<path d="M140 246 Q104 266 66 249 L43 221" fill="none" stroke="#d1a177" stroke-width="28" stroke-linecap="round"/><circle cx="41" cy="218" r="20" fill="#f5bd96"/>
+<path d="M220 249 Q261 255 293 224 L313 203" fill="none" stroke="#d1a177" stroke-width="28" stroke-linecap="round"/><circle cx="314" cy="198" r="19" fill="#f6c59d"/>
+<path d="M174 237 L175 336" stroke="#a4784d" stroke-width="3"/><rect x="127" y="275" width="37" height="29" rx="5" fill="#d4a875" stroke="#9f7647"/><rect x="191" y="275" width="37" height="29" rx="5" fill="#d4a875" stroke="#9f7647"/><circle cx="176" cy="256" r="3.5" fill="#85542f"/><circle cx="176" cy="286" r="3.5" fill="#85542f"/><circle cx="176" cy="316" r="3.5" fill="#85542f"/>
+<rect x="160" y="201" width="33" height="45" rx="15" fill="#e8b08b"/>
+<ellipse cx="174" cy="131" rx="95" ry="97" fill="url(#skin)" stroke="#e3a57b" stroke-width="3"/><ellipse cx="81" cy="140" rx="15" ry="21" fill="#edb08b"/><ellipse cx="268" cy="140" rx="15" ry="21" fill="#edb08b"/>
+<path d="M84 95 Q62 35 114 31 Q138 -1 180 25 Q232 2 260 50 Q280 83 261 101 Q245 56 216 59 Q173 80 137 58 Q107 62 84 95" fill="#e0e3e7" stroke="#939ca9" stroke-width="4"/>
+<path d="M115 34 Q133 20 158 25 M189 20 Q216 24 233 43" fill="none" stroke="#f8fafc" stroke-width="9" stroke-linecap="round"/>
+<path d="M116 107 Q133 98 151 106" fill="none" stroke="#635044" stroke-width="5" stroke-linecap="round"/>
+<path d="M194 106 Q212 96 231 106" fill="none" stroke="#635044" stroke-width="5" stroke-linecap="round"/>
+<path d="M126 125 Q138 113 151 125 M196 125 Q209 112 223 125" stroke="#473527" stroke-width="5" fill="none" stroke-linecap="round"/><ellipse cx="114" cy="155" rx="17" ry="10" fill="#f09c86" opacity=".40"/><ellipse cx="236" cy="155" rx="17" ry="10" fill="#f09c86" opacity=".4"/>
+<path d="M173 127 Q165 151 175 154 L183 155" stroke="#bf805c" stroke-width="4" fill="none" stroke-linecap="round"/>
+<path d="M147 160 Q172 191 204 160 Q194 200 171 200 Q150 198 147 160" fill="#7d2e30" stroke="#5b312b" stroke-width="3"/><path d="M154 171 Q171 182 194 171" stroke="#fff4e7" stroke-width="7" fill="none"/>
+<path d="M139 150 Q152 142 165 152 M186 152 Q200 144 210 150" stroke="#fffdfa" stroke-width="7" fill="none" stroke-linecap="round" opacity=".98"/>
+<path d="M139 158 Q151 162 163 156 M187 156 Q199 162 212 158" stroke="#a6a6a0" stroke-width="2" fill="none"/>
+</g></svg>

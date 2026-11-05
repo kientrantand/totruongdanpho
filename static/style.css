@@ -60,3 +60,47 @@
 #directory-list{scroll-margin-top:26px}
 @media(max-width:980px){.map-body{grid-template-columns:1fr}.map-chooser{border-left:0;border-top:1px solid #e5ebf4;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}.map-chooser-title,.map-hint{grid-column:1/-1}.ward-chip{margin:0}.map-graphic{min-height:330px}}
 @media(max-width:580px){.map-head{padding:18px 16px;align-items:flex-start;flex-direction:column}.map-head h2{font-size:1.12rem}.map-body{min-height:unset}.map-graphic{min-height:255px}.map-chooser{grid-template-columns:repeat(2,minmax(0,1fr));padding:13px;gap:7px}.ward-chip{padding:10px 8px;font-size:.83rem}.map-graphic svg{height:275px}.ward-shape text{font-size:17px}.map-attr{font-size:.62rem}}
+
+/* V5 — responsive full-bleed map, friendly Vietnamese typography, game */
+:root{--bg:#f0f5fc;--ink:#192c48;--blue:#2759da;--blueDeep:#1e43b5;--radius:21px}
+html,body,button,input,select,textarea{font-family:'Be Vietnam Pro','Segoe UI',sans-serif}
+html{font-size:14px}body{width:100%;overflow-x:hidden}
+.shell{max-width:none;width:100%;margin:0;grid-template-columns:218px minmax(0,1fr)}
+.main,.content{min-width:0;width:100%;max-width:none}.content{padding:20px clamp(14px,1.8vw,32px) 45px}.topbar{height:72px;padding:0 clamp(14px,2vw,30px)}
+.login-shell{max-width:none}.sidebar{padding:24px 11px}.page-head{margin-bottom:15px}.page-title{letter-spacing:-.7px}.page-desc{max-width:none}
+.map-main.map-v5{width:100%;overflow:hidden;border-radius:25px;background:#f9fcff;box-shadow:0 15px 40px #19396612}
+.map-v5 .map-head{padding:18px 24px}.map-v5 .map-head h2{font-size:clamp(1.3rem,2vw,2rem)}
+.map-v5 .map-tilt-zone{perspective:1400px;perspective-origin:center center;background:linear-gradient(130deg,#bcdaf3,#e8f1fa 55%,#d4e9ee);overflow:hidden;position:relative;min-height:min(72vh,720px);touch-action:pan-y}
+.map-v5 .map-graphic{min-height:min(72vh,720px);height:min(72vh,720px);width:100%;transition:transform .18s ease-out;transform:rotateX(var(--rx,0deg)) rotateY(var(--ry,0deg));transform-style:preserve-3d}
+.map-v5 .map-graphic svg{width:100%;height:100%;max-height:none;overflow:visible;shape-rendering:geometricPrecision;text-rendering:geometricPrecision}
+.map-v5 .ward-shape path{stroke:#eff8ff;stroke-width:2.7;transition:filter .18s,opacity .18s;opacity:.95}
+.map-v5 .ward-shape text{font-size:20px;stroke:#152c51;stroke-width:4;fill:#fff;paint-order:stroke;letter-spacing:.5px}
+.map-v5 .map-credit{bottom:15px;left:16px;z-index:2}
+.map-chip-strip{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:9px;padding:12px 16px;background:#f8fbff}
+.map-chip-strip .ward-chip{margin:0;padding:12px 9px;white-space:normal;font-size:.8rem;gap:5px;min-width:0}
+.map-chip-strip .ward-chip b{font-size:.65rem}.map-chip-strip .ward-chip span:nth-child(2){line-height:1.4}
+.finder-panel{margin:22px 0 26px;background:#fff;border:1px solid #e1e8f3;border-radius:22px;padding:clamp(18px,2.3vw,27px);box-shadow:0 12px 30px #1835610b}
+.finder-panel .section-head{margin-bottom:12px}.finder-panel .section-head h3{font-size:1.35rem}
+.finder-panel .filters{background:transparent;padding:0;margin-bottom:15px}.finder-panel .search-input{font-size:1rem}
+.finder-panel .search-empty{width:100%;min-height:120px;padding:25px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:9px;background:#f6f9fe}
+.finder-panel .search-empty h3{margin:0}.finder-panel .search-empty p{margin:0;color:#6d819a}
+.v5-profile{width:min(1480px,97vw)!important;max-height:94dvh;overflow-y:auto;border-radius:22px}
+.v5-profile .profile-banner{padding:19px 26px}.v5-profile .profile-title-text h2{font-size:clamp(1.8rem,3.5vw,3rem)!important;line-height:1.1}
+.v5-layout{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(350px,1fr);background:#fff}
+.vote-play{padding:24px 27px;min-width:0}.vote-insights{border-left:1px solid #e7edf6;padding:24px 25px;min-width:0;max-height:72dvh;overflow:auto}
+.v5-options{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin:15px 0 12px}
+.v5-option{border:2px solid #e5eaf2;background:#f9fbfe;border-radius:15px;padding:10px 7px;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:105px;gap:7px;color:#38516c;transition:transform .16s,border-color .16s,box-shadow .16s}
+.v5-option .face-emoji{font-size:28px}.v5-option b{font-size:.76rem;line-height:1.5;text-align:center}
+.v5-option:hover{transform:translateY(-3px);border-color:var(--state-color)}.v5-option.selected{background:#fff;border-color:var(--state-color);box-shadow:0 5px 17px #294f8e17}
+.game-frame{overflow:hidden;border-radius:17px;border:1px solid #cedff0;background:#e3f2ff}
+#ball-game{width:100%;height:auto;aspect-ratio:900/390;display:block;touch-action:none;cursor:crosshair}
+.game-buttons{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:9px 14px;background:#fff}
+.game-buttons>span{font-weight:700;color:#527396;font-size:.8rem}.game-buttons .btn{background:linear-gradient(110deg,#366fef,#184cc5);border:0}
+.game-notice{margin:10px 0 6px;padding:12px 14px;border-radius:12px;background:#eafaf3;color:#1b7462;font-size:.83rem;font-weight:700;line-height:1.6}
+.game-fairness{color:#647994;font-size:.75rem;line-height:1.7}
+.v5-layout .profile-section-head{margin-bottom:14px}.vote-insights .profile-section-head:not(:first-child){margin-top:24px}
+.v5-layout .comment-compose{margin-bottom:16px}.v5-layout .notice{line-height:1.6}
+@media(max-width:1180px){.map-chip-strip{grid-template-columns:repeat(3,minmax(0,1fr))}.v5-layout{grid-template-columns:1fr}.vote-insights{border-left:0;border-top:1px solid #e4ebf5;max-height:none}.v5-profile{max-height:92dvh}}
+@media(max-width:850px){.shell{display:block}.sidebar{position:relative;height:auto;min-height:0;display:block;padding:12px 14px}.sidebar .brand-mark{padding:0}.side-caption,.sidebar-bottom{display:none}.side-nav{flex-direction:row;overflow-x:auto;margin-top:8px}.side-nav button{padding:10px;white-space:nowrap}.topbar{height:53px}.topbar-right{font-size:.7rem}.map-v5 .map-tilt-zone,.map-v5 .map-graphic{min-height:clamp(360px,72vw,560px);height:clamp(360px,72vw,560px)}.map-chip-strip{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:600px){.content{padding:14px 11px 28px}.page-head{margin-bottom:12px}.page-title{font-size:1.6rem}.map-v5 .map-head{padding:14px}.map-v5 .map-tilt-zone,.map-v5 .map-graphic{height:360px;min-height:360px}.map-chip-strip{grid-template-columns:repeat(2,minmax(0,1fr));padding:9px;gap:7px}.map-chip-strip .ward-chip{padding:10px 7px}.map-v5 .ward-shape text{font-size:21px}.finder-panel{padding:15px;margin-top:14px}.v5-profile{width:100vw!important;max-height:100dvh;border-radius:0}.v5-profile .profile-banner{padding:13px 16px}.vote-play,.vote-insights{padding:17px 14px}.v5-options{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.v5-option{min-height:88px}.v5-option .face-emoji{font-size:23px}.game-buttons{flex-wrap:wrap;padding:9px}#ball-game{min-height:180px}.modal-bg{padding:0!important}.map-v5 .map-head p{font-size:.76rem}}
+@media(prefers-reduced-motion:reduce){.map-v5 .map-graphic{transition:none}.v5-option:hover{transform:none}}

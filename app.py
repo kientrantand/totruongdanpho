@@ -152,7 +152,7 @@ def sec_headers(resp):
     resp.headers['Content-Security-Policy'] = (
         "default-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; "
         "form-action 'self'; img-src 'self' data:; connect-src 'self' https://raw.githubusercontent.com; "
-        "script-src 'self'; style-src 'self'")
+        "script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com")
     return resp
 
 
@@ -182,7 +182,7 @@ def index():
 
 @app.get('/static/<path:name>')
 def static_file(name):
-    if name not in ('app.js', 'style.css'):
+    if name not in ('app.js', 'game.js', 'style.css') and not re.fullmatch(r'assets/mascots/mascot-[1-4]\.svg', name):
         return fail('Không tìm thấy tệp.', 404)
     return send_from_directory(ROOT / 'static', name)
 
@@ -428,6 +428,11 @@ def comment():
         return fail('Quản trị viên không thể gửi đánh giá ẩn danh.',403)
     data=payload()
     lid=checked_leader(data.get('leader_id'))
+    # Bắt buộc có phiếu trong PostgreSQL; không tin trạng thái giao diện.
+    has_vote=scalar('SELECT 1 FROM app.votes WHERE participant_id=%s AND leader_id=%s',
+                    (user['id'],lid))
+    if not has_vote:
+        return fail('Bạn cần bình chọn thành công trước khi gửi bình luận.',403)
     text=clean(data.get('body'),2000)
     if not (5<=len(text)<=700):
         return fail('Bình luận phải dài 5–700 ký tự.')

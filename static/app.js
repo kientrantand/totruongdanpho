@@ -135,8 +135,10 @@ function mapShapes(){
 function mapView(){
  const counts=S.overview?.wards||{};
  const chips=WARDS.map((w,i)=>`<button class="ward-chip ${S.ward===w?'active':''}" data-action="map-ward" data-value="${e(w)}"><span class="map-dot cward${i}"></span><span>${e(wardName(w))}</span><b>${fnum(counts[w]||0)}</b></button>`).join('');
- const status=S.mapStatus==='loading'?'Đang tải dữ liệu địa giới…':S.mapStatus==='ready'?'Ranh giới hành chính từ dữ liệu GIS':`Không tải đủ địa giới trực tuyến. Bạn vẫn có thể chọn phường bên dưới.`;
- return `<section class="map-main" aria-label="Bản đồ chọn phường"><div class="map-head"><div><div class="map-kicker">BẢN ĐỒ TRA CỨU · NAM ĐỊNH</div><h2>Chọn phường để xem tổ trưởng</h2><p>6 phường thuộc tỉnh Ninh Bình · Không bao gồm Hồng Quang và Vị Khê</p></div><button class="map-reset" data-action="map-all">${icon('pin',16)} Tất cả phường</button></div><div class="map-body"><div class="map-graphic">${S.mapFeatures.length?`<svg viewBox="0 0 1000 610" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Bản đồ tương tác 6 phường">${mapShapes()}</svg>`:`<div class="map-fallback">${icon('pin',44)}<strong>${S.mapStatus==='loading'?'Đang dựng bản đồ…':'Chọn phường để tra cứu'}</strong><span>${status}</span></div>`}<div class="map-credit">${status}</div></div><div class="map-chooser"><div class="map-chooser-title">DANH SÁCH 6 PHƯỜNG</div>${chips}<p class="map-hint">${S.ward?`Đang xem: <b>${e(S.ward)}</b>`:'Chạm vào ranh giới trên bản đồ hoặc tên phường.'}</p></div></div><div class="map-attr">Dữ liệu địa giới: thanglequoc/vietnamese-provinces-database (MIT); tham chiếu bản đồ sáp nhập của NXB Tài nguyên Môi trường và Bản đồ Việt Nam. Bản đồ phục vụ tra cứu.</div></section>`;
+ const status=S.mapStatus==='loading'?'Đang tải địa giới…':S.mapStatus==='ready'?'Bản đồ địa giới vector · Chọn trực tiếp để lọc':`Chưa tải đủ địa giới trực tuyến. Có thể chọn phường bằng nút bên dưới.`;
+ return `<section class="map-main map-v5" aria-label="Bản đồ chọn phường"><div class="map-head"><div><div class="map-kicker">KHÁM PHÁ 6 PHƯỜNG · NINH BÌNH</div><h2>Chạm vào phường bạn muốn tìm</h2><p>Đông A · Thành Nam · Nam Định · Thiên Trường · Mỹ Lộc · Trường Thi</p></div><button class="map-reset" data-action="map-all">${icon('pin',16)} Xem tất cả</button></div>
+ <div class="map-tilt-zone" id="map-tilt-zone"><div class="map-graphic map-tilt-surface" id="map-tilt-surface">${S.mapFeatures.length?`<svg viewBox="0 0 1000 610" role="img" aria-label="Bản đồ hành chính 6 phường">${mapShapes()}</svg>`:`<div class="map-fallback">${icon('pin',44)}<strong>${S.mapStatus==='loading'?'Đang dựng bản đồ…':'Chọn phường để tra cứu'}</strong><span>${status}</span></div>`}<div class="map-credit">${e(status)}</div></div></div>
+ <div class="map-chip-strip" aria-label="Chọn phường">${chips}</div><div class="map-attr">Địa giới từ nguồn GeoJSON công khai; bản đồ phục vụ tra cứu, không thay thế bản đồ pháp lý.</div></section>`;
 }
 function loginView(){
 return `<div class="login-shell"><section class="login-showcase"><div class="login-logo">✦ TỔ PHỐ / BÌNH CHỌN</div>
@@ -151,10 +153,10 @@ ${S.loginError?`<div class="error-msg">${e(S.loginError)}</div>`:''}
 }
 function navItem(v, ico, label){return `<button data-action="nav" data-value="${v}" class="${S.view===v?'active':''}">${icon(ico)}<span>${label}</span></button>`;}
 function pageLayout(){
-const titles={directory:'Bản đồ 6 phường & Tổ trưởng',results:'Kết quả bình chọn',admin:'Quản lý hệ thống'};
+const titles={directory:'Bản đồ và tra cứu tổ trưởng',results:'Kết quả bình chọn',admin:'Quản lý hệ thống'};
 return `<div class="shell"><aside class="sidebar"><div class="brand-mark"><span class="logo-symbol">✦</span><div>TỔ PHỐ<small>HỆ THỐNG BÌNH CHỌN</small></div></div>
   <div class="side-caption">KHÔNG GIAN LÀM VIỆC</div><nav class="side-nav" aria-label="Điều hướng">
-    ${navItem('directory','people','Danh sách tổ trưởng')}${navItem('results','trophy','Bảng xếp hạng & Kết quả')}
+    ${navItem('directory','pin','Bản đồ tra cứu')}${navItem('results','trophy','Bảng xếp hạng & Kết quả')}
     ${S.user.role==='admin'?navItem('admin','shield','Quản trị hệ thống'):''}
   </nav><div class="sidebar-bottom"><div class="account-chip"><div class="avatar">${initial(S.user.label)}</div><div style="min-width:0"><b title="${e(S.user.label)}">${e(S.user.label)}</b><small>${S.user.role==='admin'?'Quản trị viên':S.user.role==='guest'?'Tra cứu công khai':'Khách ẩn danh'}</small></div></div><button class="logout-btn" data-action="${S.user.role==='admin'?'logout':'show-login'}">${icon('logout',15)} ${S.user.role==='admin'?'Đăng xuất':'Quản trị viên'}</button></div>
   </aside><main class="main"><header class="topbar"><div class="breadcrumbs">Hệ thống <span>›</span> <b>${titles[S.view]||''}</b></div><div class="topbar-right"><span class="topbar-dot"></span> Không gian đánh giá nội bộ <button class="btn btn-sm btn-ghost" data-action="${S.user.role==='admin'?'logout':'show-login'}" style="color:#7386a5">${S.user.role==='admin'?'Đăng xuất':'Quản trị'}</button></div></header>
@@ -168,7 +170,7 @@ function wards(){return WARDS;}
 function filters(){return `<div class="filters"><div class="search-wrap">${icon('search')}<input id="search" class="search-input" type="search" placeholder="Tìm theo tên tổ trưởng, tổ/xóm, địa bàn cũ…" value="${e(S.q)}" aria-label="Tìm kiếm"></div>
 <select class="select" id="ward-select" aria-label="Lọc theo phường"><option value="">Tất cả phường</option>${wards().map(w=>`<option value="${e(w)}" ${w===S.ward?'selected':''}>${e(w)}</option>`).join('')}</select>
 <select class="select" id="sort-select" aria-label="Sắp xếp"><option value="area" ${S.sort==='area'?'selected':''}>Theo địa bàn</option><option value="votes" ${S.sort==='votes'?'selected':''}>Nhiều phiếu nhất</option><option value="name" ${S.sort==='name'?'selected':''}>Theo tên A – Z</option></select></div>`;}
-function filtered(){let arr=S.leaders.filter(x=>(!S.ward||x.ward===S.ward)&&(!S.votedOnly||x.my_vote!==null)&&norm([x.name,x.area,x.ward,...x.aliases].join(' ')).includes(norm(S.q)));
+function filtered(){if(norm(S.q).trim().length<2)return [];let arr=S.leaders.filter(x=>(!S.ward||x.ward===S.ward)&&(!S.votedOnly||x.my_vote!==null)&&norm([x.name,x.area,x.ward,...x.aliases].join(' ')).includes(norm(S.q)));
 const cmp=(a,b)=>a.localeCompare(b,'vi');
 if(S.sort==='votes')arr.sort((a,b)=>b.votes-a.votes||cmp(a.ward,b.ward)||cmp(a.area,b.area));
 else if(S.sort==='name')arr.sort((a,b)=>cmp(a.name,b.name));
@@ -179,10 +181,11 @@ function personCard(x){const shown=x.revealed&&x.votes>0;const peak=shown?x.coun
   <div class="person-sep"></div><div class="card-stat"><span class="muted">${icon('users',14)} ${fnum(x.votes)} phiếu · ${icon('message',14)} ${fnum(x.comments)} bình luận</span>${x.my_vote?'<span class="pill">✓ Đã đánh giá</span>':S.user.role==='guest'?'':'<span class="pill neutral">Chưa đánh giá</span>'}</div>
   ${shown?miniBar(x.counts,x.votes):miniBar(null,0)}
   <div class="card-bottom"><div class="muted">${shown?`Phổ biến: <b>${e(LABELS[peak])}</b>`:x.votes===0?'Chưa có lượt bình chọn':'Chưa đủ 3 phiếu để hiển thị'}</div><button class="btn btn-outline btn-sm" data-action="details" data-id="${e(x.id)}">${S.user.role==='admin'?'Xem nhận xét':'Xem & đánh giá'} ${icon('arrow',14)}</button></div></article>`;}
-function cardsGrid(){const items=filtered();return `<div class="count-caption">Hiển thị <strong id="visible-count">${items.length}</strong> / ${S.leaders.length} tổ trưởng · Tỉnh Ninh Bình</div><div id="cards-grid" class="directory-grid">${items.length?items.map(personCard).join(''):'<div class="empty-box"><h3>Không có kết quả phù hợp</h3><p>Thử thay đổi từ khóa hoặc chọn phường khác.</p></div>'}</div>`;}
-function directoryView(){return `<div class="page-head"><div><span class="eyebrow">BẢN ĐỒ HÀNH CHÍNH · 6 PHƯỜNG</span><h1 class="page-title">Tra cứu tổ trưởng dân phố</h1><p class="page-desc">Nhấn trực tiếp trên bản đồ để lọc danh sách theo phường, rồi mở hồ sơ từng tổ trưởng.</p></div></div>${mapView()}${summary()}
-  <div class="section-head" id="directory-list"><div><h3>Danh bạ tổ trưởng ${S.ward?'· '+e(S.ward):''}</h3><p>Đã có 126 tổ trưởng thuộc 5 phường; Thiên Trường bổ sung sau</p></div>${S.user.role==='voter'?`<button class="btn btn-sm ${S.votedOnly?'btn-primary':''}" data-action="voted-only">${icon('check',16)} ${S.votedOnly?'Xem tất cả':'Chỉ hiện đã bình chọn'}</button>`:''}</div>
-  ${filters()}${cardsGrid()}`;}
+function cardsGrid(){const items=filtered();const ready=norm(S.q).trim().length>=2;
+ return `<div class="count-caption">${ready?`Tìm thấy <strong id="visible-count">${items.length}</strong> kết quả phù hợp`:'Nhập ít nhất 2 ký tự để hiển thị tổ trưởng · Không công khai danh sách hàng loạt'}</div><div id="cards-grid" class="directory-grid">${ready?(items.length?items.slice(0,24).map(personCard).join(''):'<div class="empty-box"><h3>Không tìm thấy tổ trưởng</h3><p>Thử tìm tên hoặc địa bàn khác.</p></div>'):'<div class="empty-box search-empty">'+icon('search',32)+'<h3>Bắt đầu bằng tên hoặc địa bàn</h3><p>Chọn phường trên bản đồ, nhập tên tổ trưởng để tìm và bình chọn.</p></div>'}</div>`;
+}
+function directoryView(){return `<div class="page-head"><div><span class="eyebrow">HỆ THỐNG TỔ TRƯỞNG DÂN PHỐ · 6 PHƯỜNG</span><h1 class="page-title">Bản đồ & trải nghiệm phối hợp</h1><p class="page-desc">Chọn phường, tìm đúng người và tham gia trò chơi đánh giá vui nhộn. Mỗi phiên ẩn danh chỉ có một phiếu cho mỗi tổ trưởng.</p></div></div>${mapView()}
+ <section class="finder-panel" id="directory-list"><div class="section-head"><div><span class="eyebrow">TÌM KIẾM TỔ TRƯỞNG</span><h3>${S.ward?'Đang chọn '+e(S.ward):'Bạn muốn tìm ai?'}</h3><p>Chỉ hiển thị khi có từ khóa, không tự mở danh sách của phường.</p></div></div>${filters()}${cardsGrid()}</section>${summary()}`;}
 function rankItem(x,i,kind){
  const val=kind==='easy'?x.easy_pct:x.hard_pct;
  const short=kind==='easy'?'Chọn mức 1':'Chọn mức 3–4';
@@ -219,16 +222,15 @@ function commentItems(){
  return S.comments.map(c=>`<article class="comment-item"><div class="comment-top"><span class="anon-avatar">${icon('shield',15)}</span><div><strong>Người bình luận ẩn danh ${c.is_mine?'<span class="my-marker">· của bạn</span>':''}</strong><div class="muted micro">${dateText(c.created_at)}</div></div>${c.is_mine&&c.status!=='approved'?`<span class="comment-pending">${labels[c.status]||''}</span>`:''}</div><p class="comment-text">${e(c.body)}</p><div class="comment-tools">${c.is_mine?`<button data-action="remove-comment" data-id="${c.id}">Xóa bình luận của tôi</button>`:S.user.role==='voter'?`<button data-action="report-comment" data-id="${c.id}">${icon('flag',12)} Báo cáo</button>`:''}</div></article>`).join('');
 }
 function detailModal(){const x=S.leaders.find(l=>l.id===S.selected);if(!x)return '';const counts=x.counts||[0,0,0,0];const s=S.draftVote;
-return `<div class="modal-bg" data-action="close-bg"><div class="modal modal-profile" role="dialog" aria-modal="true" aria-labelledby="detail-title">
-<div class="profile-banner"><div class="profile-kicker">HỒ SƠ ĐÁNH GIÁ TỔ TRƯỞNG DÂN PHỐ <span>${e(wardName(x.ward))} · Ninh Bình</span></div><div class="profile-title-line"><span class="profile-avatar">${initial(x.name)}</span><div class="profile-title-text"><span class="profile-tag">TỔ TRƯỞNG DÂN PHỐ</span><h2 id="detail-title">${e(x.name)}</h2><p>${icon('pin',15)} ${e(x.area)}, ${e(x.ward)}, Ninh Bình</p></div><button class="icon-btn profile-close" data-action="close-modal" aria-label="Đóng cửa sổ">×</button></div><div class="profile-metrics"><span>${icon('users',16)} <b>${fnum(x.votes)}</b> lượt bình chọn</span><span>${icon('message',16)} <b>${fnum(S.commentTotal)}</b> bình luận công khai</span></div></div>
-<div class="profile-columns"><div class="profile-vote"><div class="profile-section-head"><span class="eyebrow">01 / BÌNH CHỌN</span><h3>Đánh giá của bạn</h3><p>Bình chọn theo trải nghiệm phối hợp thực tế.</p></div>
-${S.user.role==='voter'?`<div class="option-list">${LABELS.map((l,i)=>`<button type="button" class="vote-option ${s===i+1?'selected':''}" data-action="choose" data-level="${i+1}"><span class="option-mark c${i+1}"></span><b>${i+1}. ${e(l)}</b><span class="check-circle">${s===i+1?'✓':''}</span></button>`).join('')}</div><div class="btn-row"><button class="btn btn-primary" data-action="save-vote" ${s==null?'disabled':''}>${icon('check',16)} ${x.my_vote?'Cập nhật phiếu':'Gửi bình chọn'}</button>${x.my_vote?'<button class="btn btn-ghost btn-sm" data-action="remove-vote">Hủy phiếu</button>':''}</div>`:`<div class="notice">${S.user.role==='guest'?'Đang khởi tạo phiên ẩn danh, vui lòng tải lại trang.':'Quản trị viên chỉ xem kết quả, không tham gia bình chọn.'}</div>`}
-<div class="profile-section-head result-sect"><span class="eyebrow">02 / KẾT QUẢ</span><h3>Phân bố đánh giá</h3><p>${fnum(x.votes)} phiếu từ người tham gia</p></div>
-${x.revealed&&x.votes?LABELS.map((l,i)=>`<div class="result-row"><div><div class="title"><span>${e(l)}</span><span>${fnum(counts[i])} phiếu</span></div><div class="bar"><span style="width:${counts[i]*100/x.votes}%;background:${COLORS[i]}"></span></div></div><div class="percent">${percent(counts[i],x.votes)}%</div></div>`).join('')+`<div class="notice">Điểm trung bình: <strong>${Number(x.score).toFixed(2).replace('.',',')}/4</strong>, 4 là mức thuận lợi nhất.</div>`:`<div class="notice orange">${x.votes===0?'Chưa có bình chọn nào.':'Cần tối thiểu 3 phiếu để công bố tỷ lệ.'}</div>`}
-</div><div class="profile-comments"><div class="profile-section-head"><span class="eyebrow">03 / GÓC CHIA SẺ</span><h3>${icon('message',21)} Bình luận ẩn danh</h3><p>Danh tính không hiển thị với người xem. Chỉ bình luận về trải nghiệm phối hợp, không đưa thông tin cá nhân.</p></div>
-${S.user.role==='voter'?`<form id="comment-form" class="comment-compose"><div class="comment-compose-top"><span class="anon-avatar">${icon('shield',16)}</span><div><strong>Bình luận dưới tên Ẩn danh</strong><small>Không yêu cầu đăng nhập, không công bố danh tính của bạn</small></div></div><textarea id="comment-text" name="body" required minlength="5" maxlength="700" rows="4" placeholder="Ví dụ: Bác phối hợp khá nhanh khi nhận giấy mời, hướng dẫn rõ địa chỉ...">${e(S.commentDraft)}</textarea><div class="compose-foot"><small><span id="comment-length">${S.commentDraft.length}</span>/700 ký tự · Nội dung sẽ được duyệt trước khi hiển thị</small><button class="btn btn-primary btn-sm" type="submit">${icon('message',15)} Gửi ẩn danh</button></div></form>`:`<div class="notice">${S.user.role==='guest'?'Đang khởi tạo phiên ẩn danh, vui lòng tải lại trang.':'Quản trị viên có thể duyệt bình luận trong khu vực Quản trị.'}</div>`}
-<div class="comment-list-head"><h4>Bình luận cộng đồng</h4><span>${fnum(S.commentTotal)} bình luận công khai</span></div><div class="comment-list">${commentItems()}</div>
-<div class="safe-comment-note">${icon('shield',17)} Bình luận hiển thị ẩn danh. Trình duyệt được cấp mã ngẫu nhiên để giới hạn phiếu và bình luận; xóa cookie hoặc dùng thiết bị khác có thể tạo mã mới. Những nhận xét này không phải kết luận xác minh.</div></div></div></div></div>`;
+ const canComment=S.user.role==='voter'&&x.my_vote!=null;
+ return `<div class="modal-bg" data-action="close-bg"><div class="modal modal-profile v5-profile" role="dialog" aria-modal="true" aria-labelledby="detail-title">
+ <div class="profile-banner"><div class="profile-kicker">TRẢI NGHIỆM PHỐ MÌNH <span>${e(wardName(x.ward))} · Ninh Bình</span></div><div class="profile-title-line"><span class="profile-avatar">${initial(x.name)}</span><div class="profile-title-text"><span class="profile-tag">TỔ TRƯỞNG DÂN PHỐ</span><h2 id="detail-title">${e(x.name)}</h2><p>${icon('pin',15)} ${e(x.area)} · ${e(x.ward)}</p></div><button class="icon-btn profile-close" data-action="close-modal" aria-label="Đóng cửa sổ">×</button></div><div class="profile-metrics"><span>${icon('users',16)} <b>${fnum(x.votes)}</b> phiếu</span><span>${icon('message',16)} <b>${fnum(S.commentTotal)}</b> bình luận đã duyệt</span></div></div>
+ <div class="v5-layout"><section class="vote-play"><div class="profile-section-head"><span class="eyebrow">01 / CHỌN TRẢI NGHIỆM</span><h3>Gặp bác tổ trưởng, bạn cảm thấy thế nào?</h3><p>Chọn một mức rồi kéo hướng súng và bắn bóng xốp vào nhân vật hoạt hình.</p></div>
+ ${S.user.role==='voter'?`<div class="v5-options">${LABELS.map((label,i)=>`<button type="button" class="v5-option ${s===i+1?'selected':''}" data-action="choose" data-level="${i+1}" style="--state-color:${COLORS[i]}"><span class="face-emoji">${['😊','😐','🤨','😠'][i]}</span><b>${e(label)}</b></button>`).join('')}</div><div class="game-frame"><canvas id="ball-game" aria-label="Trò bắn bóng mềm: kéo để ngắm rồi bấm nút bắn" role="img"></canvas><div class="game-buttons"><span id="shot-counter">0 bóng đã bắn</span><button class="btn btn-primary" data-action="game-fire" ${s==null?'disabled':''}>🎯 BẮN BÓNG</button></div></div><div class="game-notice" id="game-status">${x.my_vote?'✓ Bạn đã đánh giá ở mức '+x.my_vote+'. Bắn trúng với mức khác để đổi phiếu.':'Bạn chưa bình chọn. Bắn trúng nhân vật để xác nhận một phiếu.'}</div><p class="game-fairness">Bắn bao nhiêu bóng cũng được, nhưng chỉ tính <b>1 phiếu cho mỗi tổ trưởng trên mỗi phiên ẩn danh</b>. Các phát bắn thêm không cộng lượt. Nhân vật hoàn toàn hư cấu.</p>${x.my_vote?'<button class="btn btn-ghost btn-sm" data-action="remove-vote">Hủy phiếu của tôi</button>':''}`:`<div class="notice">Quản trị viên chỉ xem kết quả, không tham gia bình chọn.</div>`}
+ </section><aside class="vote-insights"><div class="profile-section-head"><span class="eyebrow">02 / KẾT QUẢ</span><h3>Ý kiến cộng đồng</h3><p>${fnum(x.votes)} phiếu đã ghi nhận</p></div>${x.revealed&&x.votes?LABELS.map((l,i)=>`<div class="result-row"><div><div class="title"><span>${e(l)}</span><span>${fnum(counts[i])} phiếu</span></div><div class="bar"><span style="width:${counts[i]*100/x.votes}%;background:${COLORS[i]}"></span></div></div><div class="percent">${percent(counts[i],x.votes)}%</div></div>`).join(''):`<div class="notice orange">${x.votes===0?'Chưa có lượt bình chọn.':'Chỉ công bố tỷ lệ khi đủ ít nhất 3 phiếu.'}</div>`}
+ <div class="profile-section-head"><span class="eyebrow">03 / BÌNH LUẬN ẨN DANH</span><h3>Góc chia sẻ</h3><p>Gửi nhận xét sau khi bình chọn; mọi bình luận đều được duyệt.</p></div>
+ ${canComment?`<form id="comment-form" class="comment-compose"><div class="comment-compose-top"><span class="anon-avatar">${icon('shield',16)}</span><div><strong>Người bình luận ẩn danh</strong><small>Không hiển thị danh tính công khai</small></div></div><textarea id="comment-text" name="body" required minlength="5" maxlength="700" rows="4" placeholder="Chia sẻ một trải nghiệm cụ thể, lịch sự…">${e(S.commentDraft)}</textarea><div class="compose-foot"><small><span id="comment-length">${S.commentDraft.length}</span>/700 ký tự</small><button class="btn btn-primary btn-sm" type="submit">Gửi chờ duyệt</button></div></form>`:`<div class="notice">🔒 ${S.user.role==='voter'?'Hãy bắn trúng và lưu phiếu trước khi bình luận.':'Tài khoản quản trị chỉ duyệt bình luận.'}</div>`}
+ <div class="comment-list-head"><h4>Bình luận cộng đồng</h4><span>${fnum(S.commentTotal)} công khai</span></div><div class="comment-list">${commentItems()}</div><div class="safe-comment-note">Nhận xét là cảm nhận chủ quan. Không đăng số điện thoại, thông tin cá nhân hoặc nội dung xúc phạm.</div></aside></div></div></div>`;
 }
 function leaderModal(){const x=S.editLeader==='new'?null:S.adminLeaders.find(l=>l.id===S.editLeader);return `<div class="modal-bg" data-action="close-bg"><div class="modal large" role="dialog" aria-modal="true" aria-labelledby="edit-title"><div class="modal-head"><div><h2 id="edit-title">${x?'Chỉnh sửa tổ trưởng':'Thêm tổ trưởng dân phố'}</h2><p>Phạm vi quản lý: tỉnh Ninh Bình</p></div><button class="icon-btn" data-action="close-modal" aria-label="Đóng">×</button></div>
 <div class="modal-body"><form id="leader-form" data-id="${e(x?.id||'')}"><div class="form-grid">
@@ -241,15 +243,36 @@ function leaderModal(){const x=S.editLeader==='new'?null:S.adminLeaders.find(l=>
 <div class="form-field span2"><label>Địa bàn cũ hoặc tên gọi khác (ngăn cách bằng dấu phẩy)</label><textarea name="aliases" rows="2">${e((x?.aliases||[]).join(', '))}</textarea></div>
 ${x?`<div class="form-field span2"><label><input name="active" type="checkbox" style="width:auto;margin-right:8px" ${x.active?'checked':''}>Hiển thị tổ trưởng trong bình chọn</label></div>`:''}
 </div><div class="modal-foot"><button type="button" class="btn" data-action="close-modal">Hủy</button><button class="btn btn-primary" type="submit">${icon('check',16)} Lưu thông tin</button></div></form></div></div></div>`;}
-function render(){app.innerHTML=S.user?pageLayout():loginView();}
-function rerenderCards(){const wrap=document.getElementById('cards-grid');if(!wrap)return;const list=filtered();wrap.innerHTML=list.length?list.map(personCard).join(''):'<div class="empty-box"><h3>Không có kết quả phù hợp</h3><p>Thử thay đổi từ khóa hoặc chọn phường khác.</p></div>';const n=document.getElementById('visible-count');if(n)n.textContent=list.length;}
+async function onGameHit(){
+ const lid=S.selected,level=S.draftVote;
+ if(!lid||level==null||S.isSaving)return;
+ const x=S.leaders.find(l=>l.id===lid);if(!x)return;
+ if(x.my_vote===level){const status=document.getElementById('game-status');if(status)status.textContent='🎉 Trúng! Phiếu hiện tại của bạn đã được ghi nhận; bắn tiếp chỉ là trò chơi.';return;}
+ S.isSaving=true;
+ try{
+   await req('/api/vote','POST',{leader_id:lid,level});
+   await loadMain();if(S.selected===lid){await loadComments(lid);}
+   showToast(x.my_vote?'Đã đổi mức đánh giá (vẫn chỉ một phiếu).':'🎉 Bắn trúng! Đã lưu một phiếu đánh giá.');
+   render();
+ }catch(err){showToast('Chưa lưu phiếu: '+err.message);}finally{S.isSaving=false;}
+}
+function render(){
+ window.TDPGame?.dispose();
+ app.innerHTML=S.user?pageLayout():loginView();
+ const canvas=document.getElementById('ball-game');
+ if(canvas && S.user?.role==='voter'){
+   window.TDPGame?.mount(canvas,{level:S.draftVote||2,onHit:onGameHit,alreadyVoted:!!S.leaders.find(l=>l.id===S.selected)?.my_vote});
+   canvas.addEventListener('tdp-shot',ev=>{const el=document.getElementById('shot-counter');if(el)el.textContent=ev.detail.count+' bóng đã bắn';});
+ }
+}
+function rerenderCards(){const wrap=document.getElementById('cards-grid');if(!wrap)return;const ready=norm(S.q).trim().length>=2;const list=filtered();wrap.innerHTML=ready?(list.length?list.slice(0,24).map(personCard).join(''):'<div class="empty-box"><h3>Không có kết quả phù hợp</h3><p>Thử tên hoặc địa bàn khác.</p></div>'):'<div class="empty-box search-empty">'+icon('search',32)+'<h3>Hãy nhập tên tổ trưởng</h3><p>Tối thiểu 2 ký tự để hiển thị kết quả.</p></div>';const n=document.querySelector('.count-caption');if(n)n.innerHTML=ready?`Tìm thấy <strong id="visible-count">${list.length}</strong> kết quả phù hợp`:'Nhập ít nhất 2 ký tự để hiển thị tổ trưởng';}
 async function refresh(){await loadMain();if(S.view==='admin')await loadAdmin();render();}
 async function copyText(txt){try{await navigator.clipboard.writeText(txt);showToast('Đã sao chép.');}catch(err){const ta=document.createElement('textarea');ta.value=txt;ta.style.position='fixed';ta.style.left='-9999px';document.body.appendChild(ta);ta.select();let ok=document.execCommand('copy');ta.remove();showToast(ok?'Đã sao chép.':'Không thể sao chép tự động. Hãy chọn và sao chép mã trên màn hình.');}}
 async function onClick(ev){const b=ev.target.closest('[data-action]');if(!b)return;
 const act=b.dataset.action;
 try{
-if(act==='map-ward'){S.ward=b.dataset.value;S.view='directory';render();document.getElementById('directory-list')?.scrollIntoView({behavior:'smooth',block:'start'});return;}
-if(act==='map-all'){S.ward='';S.view='directory';render();return;}
+if(act==='map-ward'){S.ward=b.dataset.value;S.q='';S.view='directory';render();document.getElementById('directory-list')?.scrollIntoView({behavior:'smooth',block:'start'});document.getElementById('search')?.focus({preventScroll:true});return;}
+if(act==='map-all'){S.ward='';S.q='';S.view='directory';render();return;}
 if(act==='show-login'){S.user=null;render();return;}
 if(act==='guest'){const r=await req('/api/me');S.user=r.user||GUEST;S.loginError='';await loadMain();render();return;}
 
@@ -260,6 +283,7 @@ if(act==='details'){S.selected=b.dataset.id;S.draftVote=S.leaders.find(l=>l.id==
 if(act==='close-modal'){S.selected=null;S.editLeader=null;render();return;}
 if(act==='close-bg'){if(ev.target===b){S.selected=null;S.editLeader=null;render();}return;}
 if(act==='choose'){S.draftVote=Number(b.dataset.level);render();return;}
+if(act==='game-fire'){if(S.draftVote!=null)window.TDPGame?.fire();return;}
 if(act==='save-vote'){if(S.isSaving)return;S.isSaving=true;try{await req('/api/vote','POST',{leader_id:S.selected,level:S.draftVote});showToast('Đã ghi nhận bình chọn thành công.');await loadMain();render();}finally{S.isSaving=false;}return;}
 if(act==='remove-vote'){if(!window.confirm('Hủy phiếu bình chọn của bạn cho tổ trưởng này?'))return;await req('/api/vote/'+encodeURIComponent(S.selected),'DELETE');await loadMain();render();showToast('Đã hủy phiếu.');return;}
 if(act==='admin-tab'){S.adminSection=b.dataset.value;await loadAdmin();render();return;}
@@ -299,3 +323,7 @@ app.addEventListener('submit',async ev=>{
 });
 window.addEventListener('keydown',ev=>{if(ev.key==='Escape'&&(S.selected||S.editLeader!==null)){S.selected=null;S.editLeader=null;render();}});
 bootstrap();
+
+// Bản đồ tự nghiêng nhẹ theo hướng chuột/vuốt, không thay đổi hình học địa giới.
+app.addEventListener('pointermove',ev=>{const zone=ev.target.closest('#map-tilt-zone');if(!zone)return;const rect=zone.getBoundingClientRect();const fx=Math.max(-1,Math.min(1,((ev.clientX-rect.left)/rect.width-.5)*2));const fy=Math.max(-1,Math.min(1,((ev.clientY-rect.top)/rect.height-.5)*2));const surface=zone.querySelector('#map-tilt-surface');if(surface){surface.style.setProperty('--rx',(-2.2*fy).toFixed(2)+'deg');surface.style.setProperty('--ry',(2.2*fx).toFixed(2)+'deg');}});
+app.addEventListener('pointerleave',ev=>{const zone=ev.target.closest?.('#map-tilt-zone');if(zone){const surface=zone.querySelector('#map-tilt-surface');surface?.style.setProperty('--rx','0deg');surface?.style.setProperty('--ry','0deg');}},true);
