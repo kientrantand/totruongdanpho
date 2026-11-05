@@ -4,11 +4,11 @@
  function mount(canvas,{level,onHit,alreadyVoted=false}){
    if(active)active.destroy();
    const ctx=canvas.getContext('2d');
-   const person=new Image(); person.src=`/static/assets/mascots/mascot-${level||2}.svg`;
+   let currentLevel=level||2;const person=new Image(); person.src=`/static/assets/mascots/mascot-${currentLevel}.svg`;
    const W=900,H=390,ox=105,oy=318,target={x:720,y:211,rx:83,ry:112};
    let balls=[],sparkles=[],aim={x:720,y:210},flash=0,reaction=0,shotCount=0,last=performance.now(),running=true,hitLock=false;
    canvas.width=W;canvas.height=H;
-   const color=['#22b68e','#3b93ed','#eead43','#e16b72'][(level||2)-1];
+   let color=['#22b68e','#3b93ed','#eead43','#e16b72'][currentLevel-1];
    function look(x,y){const dist=Math.hypot(x-ox,y-oy);if(dist<40)return;aim.x=Math.max(250,Math.min(W-22,x));aim.y=Math.max(30,Math.min(H-38,y));}
    function pointer(ev){const r=canvas.getBoundingClientRect();look((ev.clientX-r.left)/r.width*W,(ev.clientY-r.top)/r.height*H);}
    function down(ev){canvas.setPointerCapture?.(ev.pointerId);pointer(ev);}
@@ -30,8 +30,8 @@
      // Mascot target: 4 SVG expressions, each scales crisply on any screen.
      if(person.complete&&person.naturalWidth){
        ctx.save();
-       const bounce=level<=2 ? -Math.sin((.58-reaction)*17)*reaction*14 : Math.sin((.58-reaction)*34)*reaction*12;
-       const twist=level>=3 ? Math.sin((.58-reaction)*37)*reaction*.045 : 0;
+       const bounce=currentLevel<=2 ? -Math.sin((.58-reaction)*17)*reaction*14 : Math.sin((.58-reaction)*34)*reaction*12;
+       const twist=currentLevel>=3 ? Math.sin((.58-reaction)*37)*reaction*.045 : 0;
        ctx.translate(720+bounce*.2,193+bounce);ctx.rotate(twist);ctx.drawImage(person,-150,-175,300,350);ctx.restore();
      }
      reaction=Math.max(0,reaction-dt);
@@ -52,12 +52,12 @@
        }
      }
      for(let i=sparkles.length-1;i>=0;i--){const p=sparkles[i];p.x+=p.vx*dt;p.y+=p.vy*dt;p.life-=dt;if(p.life<=0){sparkles.splice(i,1);continue;}arc(p.x,p.y,3+p.life*4,'#ffd64d');}
-     if(flash>0){flash-=dt;ctx.textAlign='center';ctx.font='bold 32px sans-serif';ctx.fillStyle=color;ctx.fillText(level<=2?'CẢM ƠN BẠN! 💛':'ÔI CHAO! 💥',700,55);}
+     if(flash>0){flash-=dt;ctx.textAlign='center';ctx.font='bold 32px sans-serif';ctx.fillStyle=color;ctx.fillText(currentLevel<=2?'CẢM ƠN BẠN! 💛':'ÔI CHAO! 💥',700,55);}
      requestAnimationFrame(draw);
    }
-   const obj={fire,destroy(){running=false;canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);}};
+   const obj={fire,setLevel(n){if(n<1||n>4||n===currentLevel)return;currentLevel=n;color=['#22b68e','#3b93ed','#eead43','#e16b72'][n-1];person.src=`/static/assets/mascots/mascot-${n}.svg`;},destroy(){running=false;canvas.removeEventListener('pointerdown',down);canvas.removeEventListener('pointermove',move);}};
    active=obj;requestAnimationFrame(draw);return obj;
  }
  function dispose(){if(active){active.destroy();active=null;}}
- window.TDPGame={mount,dispose,fire(){active?.fire();}};
+ window.TDPGame={mount,dispose,fire(){active?.fire();},setLevel(n){active?.setLevel(n);}};
 })();
