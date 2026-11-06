@@ -247,3 +247,25 @@ h1,h2,h3,h4,.page-title,.map-head h2,.section-head h3,.person-name,.profile-titl
 .version-tag{display:inline-flex;align-items:center;font-size:.76rem;font-weight:700;color:#41639c;border-radius:8px;padding:6px 9px;background:#edf4ff}
 @media(max-width:850px){.map-v51 .map-tilt-zone{height:clamp(480px,72vh,680px)}.content{padding-top:14px}}
 @media(max-width:600px){.map-v51 .map-tilt-zone{height:clamp(410px,68vh,600px)}.map-v51 .map-name{font-size:11px;min-width:58px;max-width:95px;padding:5px 7px}.profile-phone{font-size:.84rem}.person-phone{font-size:.79rem}}
+
+/* E-TDP V6.0 — VƯỢT ẢI TỔ TRƯỞNG. Styles scoped to the new game. */
+.journey-legend{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 14px;margin:2px 0 12px;border:1px solid #e2eaf2;border-radius:12px;background:linear-gradient(110deg,#e8fbf5,#eef5ff);color:#37546f;line-height:1.5}
+.journey-legend strong{font-size:.93rem;color:#204c77;white-space:nowrap}.journey-legend span{font-size:.81rem}
+.journey-frame{background:#dbebf4;border:1px solid #c9dceb;box-shadow:0 12px 32px #2b58751a}
+#journey-game{display:block;width:100%;height:auto;aspect-ratio:960/400;min-height:0;touch-action:manipulation;cursor:pointer;background:#dff0e8}
+#journey-game:focus-visible{outline:3px solid #326fec;outline-offset:-4px}
+.journey-progress{height:7px;background:#d8e4eb;overflow:hidden}
+.journey-progress>span{display:block;height:100%;width:0%;background:linear-gradient(90deg,#42b49a,#5c9ce8);border-radius:0 3px 3px 0;transition:width .11s linear}
+.game-buttons.journey-controls{padding:12px 15px;display:flex;align-items:center;gap:14px;justify-content:space-between;flex-wrap:wrap}
+.journey-tip{font-size:.79rem;color:#5f7897;font-weight:700;line-height:1.35}
+.journey-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.journey-actions .btn{display:inline-flex;align-items:center;justify-content:center;min-height:39px;transition:transform .12s ease,box-shadow .16s ease,opacity .13s ease}
+.journey-actions .btn:not(:disabled):active{transform:scale(.96)}
+.journey-actions .btn:disabled{opacity:.55;cursor:not-allowed;box-shadow:none}
+.journey-help{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;padding:9px 0;font-size:.76rem;line-height:1.55;color:#637894}
+.journey-help span{flex:1;min-width:215px}
+.journey-access{border-top:1px dashed #d9e3ed;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 0;color:#657c94;font-size:.81rem}
+.journey-access .btn{white-space:normal;text-align:center}
+@media(max-width:720px){.journey-legend{align-items:flex-start;flex-direction:column;gap:4px}.journey-controls{justify-content:stretch!important}.journey-tip{width:100%}.journey-actions{width:100%;display:grid;grid-template-columns:1fr 1.3fr}.journey-actions .btn{min-height:44px;padding:9px 6px;font-size:.77rem}.journey-access{align-items:flex-start;flex-wrap:wrap}}
+@media(max-width:410px){.journey-actions{grid-template-columns:1fr 1.2fr}.journey-legend span,.journey-tip{font-size:.75rem}}
+@media(prefers-reduced-motion:reduce){.journey-progress>span{transition:none}.journey-actions .btn{transition:none}}
