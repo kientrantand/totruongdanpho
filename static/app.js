@@ -24,7 +24,7 @@ const GIS_BASE = 'https://raw.githubusercontent.com/thanglequoc/vietnamese-provi
 const S = {
   user: GUEST, leaders: [], overview: null, mapFeatures:[], mapStatus:'loading', view:'directory', q:'', ward:'', sort:'area',
   votedOnly: false, selected: null, draftVote: null, authRole:'admin', loginError:'',
-  adminSection: 'leaders', adminLeaders:[], showWardList:false, sidebarCollapsed:false, mobileNav:false, importResult:null, importFile:null, rankMode:'easy', listLimit:80, mapShapeHTML:null, mapCacheLabels:null,
+  adminSection: 'leaders', adminLeaders:[], showWardList:false, sidebarCollapsed:false, mobileNav:false, importResult:null, importFile:null, rankMode:'easy', listLimit:80, mapShapeHTML:null, mapCacheLabels:null, mapViewBox:null,
   editLeader:null, isSaving:false, rankings:{easy:[],difficult:[],minimum_votes:5},
   comments:[],commentDraft:'',commentTotal:0,adminComments:[]
 };
@@ -111,21 +111,25 @@ async function loadMap(){
       return {ward,geometry:feat.geometry};
     }catch(err){console.warn('Không thể tải ranh giới',ward,err);return null;}
   }));
-  S.mapFeatures=files.filter(Boolean);S.mapShapeHTML=null;S.mapCacheLabels=null;
+  S.mapFeatures=files.filter(Boolean);S.mapShapeHTML=null;S.mapCacheLabels=null;S.mapViewBox=null;
   S.mapStatus=S.mapFeatures.length===GIS.length?'ready':'limited';
   if(S.view==='directory')render();
 }
 function mapProjection(){
+ // Project true coordinates with the same scale on both axes. Fit the actual
+ // geographic bounds instead of the old, oversized fixed canvas margins.
  const all=S.mapFeatures.flatMap(x=>coordsFlat(x.geometry));
  if(!all.length)return null;
  let left=Infinity,right=-Infinity,bottom=Infinity,top=-Infinity;
  all.forEach(p=>{left=Math.min(left,p[0]);right=Math.max(right,p[0]);bottom=Math.min(bottom,p[1]);top=Math.max(top,p[1]);});
- const cy=(bottom+top)/2, k=Math.cos(cy*Math.PI/180);
- const W=1200,H=740, padx=100,pady=82;
- const deltaX=Math.max(.01,(right-left)*k),deltaY=Math.max(.01,top-bottom);
- const scale=Math.min((W-2*padx)/deltaX,(H-2*pady)/deltaY);
- const cx=(left+right)/2;
- return {W,H,point:p=>[W/2+(p[0]-cx)*k*scale,H/2-(p[1]-cy)*scale]};
+ const cy=(bottom+top)/2,k=Math.cos(cy*Math.PI/180),cx=(left+right)/2;
+ const w=Math.max(.000001,(right-left)*k),h=Math.max(.000001,top-bottom);
+ const scale=1000/Math.max(w,h);
+ const point=p=>[(p[0]-cx)*k*scale,(cy-p[1])*scale];
+ const xmin=-w*scale/2,xmax=w*scale/2,ymin=-h*scale/2,ymax=h*scale/2;
+ const margin=Math.max(24,Math.max(xmax-xmin,ymax-ymin)*.06);
+ S.mapViewBox=[xmin-margin,ymin-margin,(xmax-xmin)+2*margin,(ymax-ymin)+2*margin].map(v=>v.toFixed(2)).join(' ');
+ return {point};
 }
 function regionRings(geom){return geom.type==='MultiPolygon'?geom.coordinates:geom.type==='Polygon'?[geom.coordinates]:[];}
 function ringContains(point,ring){let inside=false;for(let i=0,j=ring.length-1;i<ring.length;j=i++){
@@ -163,22 +167,36 @@ function updateMapSelection(){
  document.querySelectorAll('.ward-polygon').forEach(el=>el.classList.toggle('selected',el.dataset.value===S.ward));
 }
 function positionMapLabels(){
- const svg=document.getElementById('map-svg');const layer=document.getElementById('map-label-layer');if(!svg||!layer)return;
- const bounds=svg.getBoundingClientRect(), vb=svg.viewBox.baseVal;
- const scale=Math.min(bounds.width/vb.width,bounds.height/vb.height);
- const ox=(bounds.width-vb.width*scale)/2,oy=(bounds.height-vb.height*scale)/2;
+ // Labels are DOM elements OUTSIDE the animated SVG: keep them crisp and
+ // reposition in the local coordinate system, not from 3D screen bounds.
+ const svg=document.getElementById('map-svg'),layer=document.getElementById('map-label-layer');
+ if(!svg||!layer)return;
+ const vb=svg.viewBox.baseVal,sw=layer.clientWidth,sh=layer.clientHeight;
+ if(!vb.width||!vb.height||!sw||!sh)return;
+ const scale=Math.min(sw/vb.width,sh/vb.height);
+ const ox=(sw-vb.width*scale)/2,oy=(sh-vb.height*scale)/2;
  const placed=[];
  layer.querySelectorAll('[data-map-label]').forEach(btn=>{
-   const x=Number(btn.dataset.x),y=Number(btn.dataset.y),bw=Math.max(75,btn.offsetWidth||115),bh=Math.max(24,btn.offsetHeight||34);
-   let px=Math.max(bw/2+3,Math.min(bounds.width-bw/2-3,ox+(x-vb.x)*scale));
-   let py=Math.max(bh/2+3,Math.min(bounds.height-bh/2-3,oy+(y-vb.y)*scale));
-   const overlap=(x1,y1)=>placed.some(r=>Math.abs(r.x-x1)<(r.w+bw)/2+4&&Math.abs(r.y-y1)<(r.h+bh)/2+4);
-   for(let i=0;i<9&&overlap(px,py);i++){
-    const sign=i%2===0?1:-1;
-    py=Math.max(bh/2+3,Math.min(bounds.height-bh/2-3,py+sign*(bh+6)*(Math.floor(i/2)+1)));
+   const x=Number(btn.dataset.x),y=Number(btn.dataset.y),bw=Math.max(72,btn.offsetWidth||110),bh=Math.max(29,btn.offsetHeight||40);
+   const cx=ox+(x-vb.x)*scale, cy=oy+(y-vb.y)*scale;
+   const clamp=(n,low,high)=>Math.max(low,Math.min(high,n));
+   const inside=(px,py)=>({x:clamp(px,bw/2+7,Math.max(bw/2+7,sw-bw/2-7)),y:clamp(py,bh/2+7,Math.max(bh/2+7,sh-bh/2-7))});
+   const offsets=[[0,0]];
+   for(let r=1;r<=5;r++)for(const [dx,dy] of [[0,-1],[0,1],[-1,0],[1,0],[-1,-1],[1,-1],[-1,1],[1,1]])offsets.push([dx*r*(bw*.60+6),dy*r*(bh*.95+6)]);
+   let best=null,bestPenalty=Infinity;
+   for(const [dx,dy] of offsets){
+     const loc=inside(cx+dx,cy+dy);
+     const overlap=placed.reduce((p,q)=>{
+       const xover=Math.max(0,(bw+q.w)/2+7-Math.abs(loc.x-q.x));
+       const yover=Math.max(0,(bh+q.h)/2+7-Math.abs(loc.y-q.y));
+       return p+xover*yover;
+     },0);
+     const penalty=overlap*120+Math.hypot(loc.x-cx,loc.y-cy);
+     if(penalty<bestPenalty){bestPenalty=penalty;best=loc;}
+     if(overlap===0&&dx===0&&dy===0)break;
    }
-   placed.push({x:px,y:py,w:bw,h:bh});
-   btn.style.left=px+'px';btn.style.top=py+'px';btn.style.visibility='visible';
+   placed.push({x:best.x,y:best.y,w:bw,h:bh});
+   btn.style.left=best.x+'px';btn.style.top=best.y+'px';btn.style.visibility='visible';
  });
 }
 function mapView(){
@@ -188,7 +206,7 @@ function mapView(){
  const shapes=mapShapes();
  const labels=S.mapLabels.map(item=>`<button class="map-name" data-map-label data-action="map-ward" data-value="${e(item.ward)}" data-x="${item.x.toFixed(2)}" data-y="${item.y.toFixed(2)}" style="visibility:hidden" aria-label="Xem ${e(item.ward)}"><small>PHƯỜNG</small><b>${e(wardName(item.ward))}</b></button>`).join('');
  return `<section class="map-main map-v5 map-v51" aria-label="Bản đồ hành chính 6 phường"><div class="map-head"><div><div class="map-kicker">E-TDP · 6 PHƯỜNG · NINH BÌNH</div><h2>Bản đồ tra cứu tổ trưởng dân phố</h2><p>Chạm vào một phường để lọc, hoặc mở danh sách theo địa bàn.</p></div><div class="map-actions"><button class="btn btn-outline" data-action="ward-list-show">${icon('list',16)} ${S.ward?'Danh sách '+e(wardName(S.ward)):'Xem danh sách theo phường'}</button><button class="map-reset" data-action="map-all">${icon('pin',16)} Toàn bộ</button></div></div>
- <div class="map-tilt-zone" id="map-tilt-zone"><div class="map-graphic map-tilt-surface" id="map-tilt-surface">${shapes?`<svg id="map-svg" viewBox="0 0 1200 740" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Địa giới hành chính 6 phường">${shapes}</svg>`:`<div class="map-fallback">${icon('pin',44)}<strong>${S.mapStatus==='loading'?'Đang dựng bản đồ…':'Chọn phường để tra cứu'}</strong><span>${e(status)}</span></div>`}</div><div class="map-label-layer" id="map-label-layer">${labels}</div><div class="map-credit">${e(status)}</div></div>
+ <div class="map-tilt-zone" id="map-tilt-zone"><div class="map-graphic map-tilt-surface" id="map-tilt-surface">${shapes?`<svg id="map-svg" viewBox="${e(S.mapViewBox||'0 0 1200 740')}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Địa giới hành chính 6 phường">${shapes}</svg>`:`<div class="map-fallback">${icon('pin',44)}<strong>${S.mapStatus==='loading'?'Đang dựng bản đồ…':'Chọn phường để tra cứu'}</strong><span>${e(status)}</span></div>`}</div><div class="map-label-layer" id="map-label-layer">${labels}</div><div class="map-credit">${e(status)}</div></div>
  <div class="map-chip-strip" aria-label="Chọn phường">${chips}</div><div class="map-attr">Đường ranh giới từ dữ liệu GeoJSON công khai, sử dụng để tra cứu tham khảo. Nhãn được hiển thị độc lập để không bị mờ khi chuyển động.</div></section>`;
 }
 function loginView(){
@@ -261,7 +279,7 @@ ${miniBar(c,total).replace('mini-chart','mini-chart overall-bar')}
 <div class="report-legend">${LABELS.map((l,i)=>`<div class="legend-row"><div class="legend-left"><span class="legend-dot c${i+1}"></span><span>${e(l)}</span></div><b>${percent(c[i],total)}%</b></div>`).join('')}</div><div class="report-note"><b>${fnum(total)}</b> lượt bình chọn trong thống kê hiển thị. Các mức đánh giá là ý kiến chủ quan và không phải xác nhận sự việc.</div></div>
 <div class="card-panel"><div class="section-head"><div><h3>Phân bố tổ trưởng theo phường</h3><p>Danh sách quản lý hiện hành</p></div>${icon('pin',21)}</div>${wards().map(w=>`<div class="ward-row"><b>${e(wardName(w))}</b><div class="line"><span style="width:${S.overview.wards[w]*100/maxWard}%"></span></div><small>${fnum(S.overview.wards[w])} người</small></div>`).join('')}
 <div class="section-head" style="margin-top:30px"><div><h3>Được bình chọn nhiều</h3><p>Sắp xếp theo lượt tham gia, không phải xếp hạng tốt/xấu</p></div></div>${top.length?top.map((x,i)=>`<div class="rank-row"><span class="rank-num">${String(i+1).padStart(2,'0')}</span><div><div class="rank-name">${e(x.name)}</div><div class="muted micro">${e(x.area)} · ${e(wardName(x.ward))}</div></div><div class="rank-side"><b>${fnum(x.votes)}</b> phiếu</div></div>`).join(''):'<div class="notice">Chưa có dữ liệu bình chọn. Kết quả sẽ xuất hiện khi người dùng tham gia.</div>'}</div></div>`;}
-function leaderRows(){const items=S.adminLeaders;return `<div class="table-scroll"><table class="table"><thead><tr><th>Tổ trưởng</th><th>Địa bàn</th><th>Số điện thoại</th><th>Trạng thái</th><th></th></tr></thead><tbody>${items.map(x=>`<tr><td><b>${e(x.name)}</b><small>${e(x.id)}</small></td><td>${e(x.area)}<br><small>${e(x.ward)}</small></td><td>${e(x.phone||'—')}</td><td><span class="badge-status ${x.active?'':'off'}">${x.active?'Đang sử dụng':'Đã ẩn'}</span></td><td class="right"><button class="btn btn-sm" data-action="edit-leader" data-id="${e(x.id)}">${icon('edit',14)} Sửa</button></td></tr>`).join('')}</tbody></table></div>`;}
+function leaderRows(){const items=S.adminLeaders;return `<div class="table-scroll"><table class="table"><thead><tr><th>Tổ trưởng</th><th>Địa bàn</th><th>Số điện thoại</th><th>Trạng thái</th><th></th></tr></thead><tbody>${items.map(x=>`<tr><td><b>${e(x.name)}</b><small>${e(x.id)}</small></td><td>${e(x.area)}<br><small>${e(x.ward)}</small></td><td>${x.phone?`<a href="tel:${e(String(x.phone).replace(/[^+0-9]/g,''))}">${e(x.phone)}</a>`:'<span class="muted">Chưa có SĐT</span>'}${x.phone_alt?`<br><small>Số khác: ${e(x.phone_alt)}</small>`:''}</td><td><span class="badge-status ${x.active?'':'off'}">${x.active?'Đang sử dụng':'Đã ẩn'}</span></td><td class="right"><button class="btn btn-sm" data-action="edit-leader" data-id="${e(x.id)}">${icon('edit',14)} Sửa</button></td></tr>`).join('')}</tbody></table></div>`;}
 function adminCommentsView(){
  const list=S.adminComments||[]; const pending=list.filter(c=>c.status==='pending'||c.status==='hidden').length;
  const label={pending:'Chờ duyệt',approved:'Đã công khai',hidden:'Đã ẩn',rejected:'Từ chối'};
@@ -274,7 +292,7 @@ return `<div class="excel-panel"><div class="excel-heading"><div><h4>Nhập danh
 }
 function adminView(){return `<div class="page-head"><div><span class="eyebrow">QUẢN TRỊ DỮ LIỆU</span><h1 class="page-title">Quản lý hệ thống</h1><p class="page-desc">Chỉnh sửa danh sách tổ trưởng và duyệt bình luận ẩn danh. Số điện thoại chỉ hiển thị cho quản trị viên.</p></div></div>${summary()}
 <div class="admin-tabs"><button data-action="admin-tab" data-value="leaders" class="${S.adminSection==='leaders'?'active':''}">Quản lý tổ trưởng</button><button data-action="admin-tab" data-value="comments" class="${S.adminSection==='comments'?'active':''}">Duyệt bình luận</button></div>
-${S.adminSection==='comments'?adminCommentsView():`<div class="card-panel"><div class="section-head"><div><h3>Danh sách tổ trưởng <span class="muted">(${S.adminLeaders.length})</span></h3><p>Thêm người mới, xuất danh sách để chỉnh sửa rồi import lại, bảo toàn ID và phiếu bình chọn.</p></div><button class="btn btn-primary" data-action="add-leader">${icon('plus',17)} Thêm tổ trưởng</button></div>${importPanel()}${leaderRows()}</div>`}`;}
+${S.adminSection==='comments'?adminCommentsView():`<div class="card-panel"><div class="section-head"><div><h3>Danh sách tổ trưởng <span class="muted">(${S.adminLeaders.length})</span></h3><p>Thêm người mới, khôi phục số điện thoại bằng Excel riêng, hoặc xuất danh sách để chỉnh sửa và nhập lại. Giữ nguyên mã ID để bảo toàn phiếu bình chọn.</p></div><button class="btn btn-primary" data-action="add-leader">${icon('plus',17)} Thêm tổ trưởng</button></div>${importPanel()}${leaderRows()}</div>`}`;}
 function commentItems(){
  if(!S.comments.length)return `<div class="comment-empty">${icon('message',24)}<strong>Chưa có bình luận công khai</strong><span>Hãy chia sẻ trải nghiệm cụ thể, lịch sự và có tính xây dựng.</span></div>`;
  const labels={pending:'Đang chờ duyệt',approved:'Đã đăng',hidden:'Đã ẩn để kiểm tra',rejected:'Không được duyệt'};
