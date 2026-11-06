@@ -1,4 +1,4 @@
-"""Tổ trưởng dân phố V4: Flask API + Supabase PostgreSQL.
+"""E-TDP V6.1: Flask API + Supabase PostgreSQL; phiếu xác nhận khóa một lần.
 
 Dữ liệu trong schema app, mọi thao tác ghi qua backend. Không có mật khẩu trong repo.
 """
@@ -376,21 +376,26 @@ def vote():
     level = data.get('level')
     if type(level) is not int or level not in (1,2,3,4):
         return fail('Chọn một trong bốn mức đánh giá.')
+    # Đòi hỏi xác nhận rõ ràng: bản frontend cũ không thể âm thầm ghi phiếu sau khi thắng game.
+    if data.get('confirmed') is not True:
+        return fail('Bạn phải xác nhận mức đánh giá trước khi ghi phiếu.', 400)
     lid = checked_leader(data.get('leader_id'))
-    g.db.execute('''INSERT INTO app.votes(participant_id,leader_id,level,updated_at)
+    # Cơ sở dữ liệu khóa theo UNIQUE(participant_id,leader_id).
+    # INSERT ... DO NOTHING là nguyên tử, chặn cả 2 request đến cùng lúc, không cho sửa phiếu đã lưu.
+    inserted = query('''INSERT INTO app.votes(participant_id,leader_id,level,updated_at)
               VALUES (%s,%s,%s,now()) ON CONFLICT(participant_id,leader_id)
-              DO UPDATE SET level=excluded.level,updated_at=excluded.updated_at''',
-              (user['id'],lid,level))
-    return jsonify(ok=True,message='Đã lưu phiếu. Bạn có thể thay đổi lựa chọn.')
+              DO NOTHING RETURNING level''', (user['id'],lid,level), one=True)
+    if not inserted:
+        return fail('Phiếu đã được xác nhận và khóa. Không thể đánh giá lại, đổi mức hoặc hủy phiếu.', 409)
+    return jsonify(ok=True,locked=True,level=level,
+                   message='Đã xác nhận và khóa đánh giá. Không thể thay đổi hoặc hủy phiếu.'), 201
 
 
 @app.delete('/api/vote/<lid>')
 @protected(write=True)
 def unvote(lid):
-    user=require()
-    g.db.execute('DELETE FROM app.votes WHERE participant_id=%s AND leader_id=%s',
-                 (user['id'],clean(lid,48)))
-    return jsonify(ok=True)
+    # Giữ endpoint cũ để trả thông báo rõ ràng, thay vì cho phép xóa phiếu như V6.0.
+    return fail('Phiếu đã xác nhận không được phép hủy.', 403)
 
 
 def iso_row(row, *keys):

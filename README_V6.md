@@ -1,3 +1,5 @@
+> **LƯU Ý:** Hướng dẫn này dành cho V6.0. Từ **V6.1**, phiếu được ghi ngay khi xác nhận cảm xúc, không được đổi/hủy; game chỉ để giải trí. Xem [README_V6_1.md](README_V6_1.md).
+
 # E-TDP V6.0 — Vượt ải tổ trưởng
 
 ## Điểm mới

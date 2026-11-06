@@ -23,7 +23,7 @@ const GIS_BASE = 'https://raw.githubusercontent.com/thanglequoc/vietnamese-provi
 
 const S = {
   user: GUEST, leaders: [], overview: null, mapFeatures:[], mapStatus:'loading', view:'directory', q:'', ward:'', sort:'area',
-  votedOnly: false, selected: null, draftVote: null, authRole:'admin', loginError:'',
+  votedOnly: false, selected: null, draftVote: null, pendingLevel: null, authRole:'admin', loginError:'',
   adminSection: 'leaders', adminLeaders:[], showWardList:false, sidebarCollapsed:false, mobileNav:false, importResult:null, importFile:null, rankMode:'easy', listLimit:80, mapShapeHTML:null, mapCacheLabels:null, mapViewBox:null,
   editLeader:null, isSaving:false, rankings:{easy:[],difficult:[],minimum_votes:5},
   comments:[],commentDraft:'',commentTotal:0,adminComments:[]
@@ -240,7 +240,7 @@ return `<div class="shell ${S.sidebarCollapsed?'sidebar-collapsed':''} ${S.mobil
     ${navItem('directory','pin','Bản đồ tra cứu')}<button data-action="ward-list-show" title="Danh sách tổ trưởng theo phường">${icon('list')}<span>Danh sách theo phường</span></button>${navItem('results','trophy','Bảng xếp hạng & Kết quả')}
     ${S.user.role==='admin'?navItem('admin','shield','Quản trị hệ thống'):''}
   </nav><div class="sidebar-bottom"><div class="account-chip"><div class="avatar">${initial(S.user.label)}</div><div style="min-width:0"><b title="${e(S.user.label)}">${e(S.user.label)}</b><small>${S.user.role==='admin'?'Quản trị viên':S.user.role==='guest'?'Tra cứu công khai':'Khách ẩn danh'}</small></div></div><button class="logout-btn" data-action="${S.user.role==='admin'?'logout':'show-login'}">${icon('logout',15)} ${S.user.role==='admin'?'Đăng xuất':'Quản trị viên'}</button></div>
-  </aside><main class="main"><header class="topbar"><button class="topbar-menu" data-action="sidebar-toggle" aria-label="Mở hoặc đóng menu">${icon('menu',22)}</button><div class="breadcrumbs">Hệ thống <span>›</span> <b>${titles[S.view]||''}</b></div><div class="topbar-right"><span class="topbar-dot"></span><span class="version-tag">E-TDP v6.0</span><button class="btn btn-sm btn-ghost" data-action="${S.user.role==='admin'?'logout':'show-login'}" style="color:#7386a5">${S.user.role==='admin'?'Đăng xuất':'Quản trị'}</button></div></header>
+  </aside><main class="main"><header class="topbar"><button class="topbar-menu" data-action="sidebar-toggle" aria-label="Mở hoặc đóng menu">${icon('menu',22)}</button><div class="breadcrumbs">Hệ thống <span>›</span> <b>${titles[S.view]||''}</b></div><div class="topbar-right"><span class="topbar-dot"></span><span class="version-tag">E-TDP v6.1</span><button class="btn btn-sm btn-ghost" data-action="${S.user.role==='admin'?'logout':'show-login'}" style="color:#7386a5">${S.user.role==='admin'?'Đăng xuất':'Quản trị'}</button></div></header>
   <div class="content">${S.view==='directory'?directoryView():S.view==='results'?resultsView():adminView()}
   <div class="fine-print">Phiếu bình chọn phản ánh cảm nhận chủ quan, không phải thông tin xác minh hay kết luận chính thức. Không sử dụng kết quả để bôi nhọ, quy chụp hoặc phát tán thông tin cá nhân.</div></div></main></div>
 ${S.selected?detailModal():''}${S.editLeader!==null?leaderModal():''}`;
@@ -310,23 +310,21 @@ function commentItems(){
  const labels={pending:'Đang chờ duyệt',approved:'Đã đăng',hidden:'Đã ẩn để kiểm tra',rejected:'Không được duyệt'};
  return S.comments.map(c=>`<article class="comment-item"><div class="comment-top"><span class="anon-avatar">${icon('shield',15)}</span><div><strong>Người bình luận ẩn danh ${c.is_mine?'<span class="my-marker">· của bạn</span>':''}</strong><div class="muted micro">${dateText(c.created_at)}</div></div>${c.is_mine&&c.status!=='approved'?`<span class="comment-pending">${labels[c.status]||''}</span>`:''}</div><p class="comment-text">${e(c.body)}</p><div class="comment-tools">${c.is_mine?`<button data-action="remove-comment" data-id="${c.id}">Xóa bình luận của tôi</button>`:S.user.role==='voter'?`<button data-action="report-comment" data-id="${c.id}">${icon('flag',12)} Báo cáo</button>`:''}</div></article>`).join('');
 }
-function detailModal(){const x=S.leaders.find(l=>l.id===S.selected);if(!x)return '';const counts=x.counts||[0,0,0,0];const s=S.draftVote;
- const canComment=S.user.role==='voter'&&x.my_vote!=null;
+function detailModal(){
+ const x=S.leaders.find(l=>l.id===S.selected);if(!x)return '';
+ const counts=x.counts||[0,0,0,0],locked=x.my_vote!=null,selectedLevel=locked?x.my_vote:S.pendingLevel;
+ const canComment=S.user.role==='voter'&&locked;
  return `<div class="modal-bg" data-action="close-bg"><div class="modal modal-profile v5-profile" role="dialog" aria-modal="true" aria-labelledby="detail-title">
  <div class="profile-banner"><div class="profile-kicker">TRẢI NGHIỆM PHỐ MÌNH <span>${e(wardName(x.ward))} · Ninh Bình</span></div><div class="profile-title-line"><span class="profile-avatar">${initial(x.name)}</span><div class="profile-title-text"><span class="profile-tag">TỔ TRƯỞNG DÂN PHỐ</span><h2 id="detail-title">${e(x.name)}</h2><p>${icon('pin',15)} ${e(x.area)} · ${e(x.ward)}</p>${publicPhone(x,'profile-phone')}</div><button class="icon-btn profile-close" data-action="close-modal" aria-label="Đóng cửa sổ">×</button></div><div class="profile-metrics"><span>${icon('users',16)} <b>${fnum(x.votes)}</b> phiếu</span><span>${icon('message',16)} <b>${fnum(S.commentTotal)}</b> bình luận đã duyệt</span></div></div>
- <div class="v5-layout"><section class="vote-play"><div class="profile-section-head"><span class="eyebrow">01 / CHỌN TRẢI NGHIỆM</span><h3>Gặp bác tổ trưởng, bạn cảm thấy thế nào?</h3><p>Chọn cảm xúc, điều khiển tờ giấy vượt chướng ngại để bác tổ trưởng nhận giấy.</p></div>
- ${S.user.role==='voter'?`<div class="v5-options">${LABELS.map((label,i)=>`<button type="button" class="v5-option ${s===i+1?'selected':''}" data-action="choose" data-level="${i+1}" style="--state-color:${COLORS[i]}"><span class="face-emoji">${['😊','😐','🤨','😠'][i]}</span><b>${e(label)}</b></button>`).join('')}</div>
- <div class="journey-legend" aria-live="polite"><strong>📄 Vượt ải tổ trưởng</strong><span>Đưa tờ giấy vượt qua chướng ngại. Bác tổ trưởng hoạt hình sẽ đón giấy ở cuối đường.</span></div>
- <div class="game-frame journey-frame"><canvas id="journey-game" tabindex="0" aria-label="Trò chơi vượt ải: bấm Bắt đầu, sau đó chạm lên trò chơi hoặc nhấn nút Nhảy để vượt chướng ngại" role="img"></canvas>
- <div class="journey-progress" aria-hidden="true"><span id="journey-progress-bar" style="width:0%"></span></div>
- <div class="game-buttons journey-controls"><span class="journey-tip">🎮 Chạm màn chơi / phím ↑ / Space để nhảy</span><div class="journey-actions"><button class="btn btn-outline" data-action="game-jump" disabled>↥ Nhảy</button><button class="btn btn-primary" data-action="game-start" ${s==null?'disabled':''}>▶ Bắt đầu vượt ải</button></div></div></div>
- <div class="game-notice" id="game-status" role="status" aria-live="polite">${x.my_vote?'✓ Bạn đã có 1 phiếu ở mức '+x.my_vote+'. Chơi lại ở mức khác nếu muốn thay đổi.':'Chọn một trải nghiệm, đưa tờ giấy tới đích để ghi nhận đánh giá.'}</div>
- <div class="journey-help"><span>🍀 Nhân vật là hình minh họa hư cấu, không đại diện diện mạo người thật.</span><span>☑ Bạn có thể chơi lại; mỗi phiên chỉ lưu <b>một phiếu</b> cho mỗi tổ trưởng.</span></div>
- <div class="journey-access"><span>Không tiện chơi trên điện thoại?</span><button type="button" class="btn btn-ghost btn-sm" data-action="quick-vote" ${s==null?'disabled':''}>Đánh giá nhanh, không chơi</button></div>
- ${x.my_vote?'<button class="btn btn-ghost btn-sm" data-action="remove-vote">Hủy phiếu của tôi</button>':''}`:`<div class="notice">Quản trị viên chỉ xem kết quả, không tham gia bình chọn.</div>`}
+ <div class="v5-layout"><section class="vote-play"><div class="profile-section-head"><span class="eyebrow">01 / BÌNH CHỌN MỘT LẦN</span><h3>Gặp bác tổ trưởng, bạn cảm thấy thế nào?</h3><p>Chọn một cảm xúc rồi nhấn xác nhận để lưu phiếu ngay. Sau khi xác nhận, bạn <strong>không thể chọn lại, đổi mức hoặc hủy phiếu</strong>. Trò chơi không ảnh hưởng kết quả.</p></div>
+ ${S.user.role==='voter'?`<div class="v5-options">${LABELS.map((label,i)=>`<button type="button" class="v5-option ${selectedLevel===i+1?'selected':''}" data-action="choose" data-level="${i+1}" style="--state-color:${COLORS[i]}" aria-pressed="${selectedLevel===i+1}" ${locked||S.isSaving?'disabled':''}><span class="face-emoji">${['😊','😐','🤨','😠'][i]}</span><b>${e(label)}</b></button>`).join('')}</div>
+ ${locked?`<div class="vote-locked-notice" role="status" aria-live="polite">${icon('lock',19)}<div><strong>Đã xác nhận và khóa phiếu</strong><p>Đánh giá của bạn: <b>${e(LABELS[x.my_vote-1])}</b>. Bạn không thể đổi hoặc hủy lựa chọn. Trò chơi dưới đây chỉ để giải trí.</p></div></div>`:S.pendingLevel!=null?`<div class="vote-confirm-box" role="group" aria-labelledby="vote-confirm-title" aria-describedby="vote-confirm-desc"><div class="vote-confirm-icon">${icon('lock',22)}</div><div class="vote-confirm-content"><h4 id="vote-confirm-title">Xác nhận đánh giá của bạn</h4><p>Bạn đã chọn: <b>${e(LABELS[S.pendingLevel-1])}</b></p><p id="vote-confirm-desc">Khi xác nhận, hệ thống ghi ngay <strong>1 phiếu duy nhất</strong> cho tổ trưởng này và khóa vĩnh viễn theo phiên của bạn. Không thể sửa, chọn lại hoặc hủy.</p><div class="vote-confirm-actions"><button type="button" class="btn btn-outline btn-sm" data-action="cancel-vote-confirm" ${S.isSaving?'disabled':''}>Quay lại chọn</button><button type="button" class="btn btn-primary btn-sm" data-action="confirm-vote" ${S.isSaving?'disabled':''}>${icon('check',16)} Xác nhận và khóa đánh giá</button></div></div></div>`:`<div class="vote-select-hint">${icon('info',16)} Chọn mức trải nghiệm để mở bước xác nhận. Chưa có phiếu nào được ghi khi bạn chỉ mở hồ sơ.</div>`}
+ <div class="journey-legend" aria-label="Trò chơi giải trí"><strong>🎮 Vượt ải tổ trưởng</strong><span>Giúp tờ giấy vượt chướng ngại cho vui. Kết quả trò chơi <b>không tạo thêm hoặc thay đổi phiếu</b>.</span></div>
+ ${locked?`<div class="game-frame journey-frame"><canvas id="journey-game" tabindex="0" aria-label="Trò chơi vượt ải giải trí, không ảnh hưởng kết quả đã bình chọn" role="img"></canvas><div class="journey-progress" aria-hidden="true"><span id="journey-progress-bar" style="width:0%"></span></div><div class="game-buttons journey-controls"><span class="journey-tip">🎮 Chạm màn chơi / phím ↑ / Space để nhảy</span><div class="journey-actions"><button class="btn btn-outline" data-action="game-jump" disabled>↥ Nhảy</button><button class="btn btn-primary" data-action="game-start">▶ Bắt đầu chơi</button></div></div></div><div class="game-notice" id="game-status" role="status" aria-live="polite">Phiếu đã khóa. Bạn có thể chơi bao nhiêu lần tùy thích, kết quả không đổi.</div>`:`<div class="game-locked-note">${icon('lock',23)}<div><strong>Trò chơi sẽ mở sau khi xác nhận bình chọn</strong><p>Không cần chơi mới được đánh giá. Xác nhận xong là phiếu được lưu và bạn có thể chơi cho vui.</p></div></div>`}
+ <div class="journey-help"><span>🍀 Bác tổ trưởng trong trò chơi là nhân vật hoạt hình hư cấu.</span><span>🔐 Mỗi phiên ẩn danh chỉ có <b>1 phiếu đã khóa</b> cho mỗi tổ trưởng.</span></div>`:`<div class="notice">Quản trị viên chỉ xem kết quả, không tham gia bình chọn.</div>`}
  </section><aside class="vote-insights"><div class="profile-section-head"><span class="eyebrow">02 / KẾT QUẢ</span><h3>Ý kiến cộng đồng</h3><p>${fnum(x.votes)} phiếu đã ghi nhận</p></div>${x.revealed&&x.votes?LABELS.map((l,i)=>`<div class="result-row"><div><div class="title"><span>${e(l)}</span><span>${fnum(counts[i])} phiếu</span></div><div class="bar"><span style="width:${counts[i]*100/x.votes}%;background:${COLORS[i]}"></span></div></div><div class="percent">${percent(counts[i],x.votes)}%</div></div>`).join(''):`<div class="notice orange">${x.votes===0?'Chưa có lượt bình chọn.':'Chỉ công bố tỷ lệ khi đủ ít nhất 3 phiếu.'}</div>`}
- <div class="profile-section-head"><span class="eyebrow">03 / BÌNH LUẬN ẨN DANH</span><h3>Góc chia sẻ</h3><p>Gửi nhận xét sau khi bình chọn; mọi bình luận đều được duyệt.</p></div>
- ${canComment?`<form id="comment-form" class="comment-compose"><div class="comment-compose-top"><span class="anon-avatar">${icon('shield',16)}</span><div><strong>Người bình luận ẩn danh</strong><small>Không hiển thị danh tính công khai</small></div></div><textarea id="comment-text" name="body" required minlength="5" maxlength="700" rows="4" placeholder="Chia sẻ một trải nghiệm cụ thể, lịch sự…">${e(S.commentDraft)}</textarea><div class="compose-foot"><small><span id="comment-length">${S.commentDraft.length}</span>/700 ký tự</small><button class="btn btn-primary btn-sm" type="submit">Gửi chờ duyệt</button></div></form>`:`<div class="notice">🔒 ${S.user.role==='voter'?'Hãy đưa tờ giấy đến đích và lưu phiếu trước khi bình luận.':'Tài khoản quản trị chỉ duyệt bình luận.'}</div>`}
+ <div class="profile-section-head"><span class="eyebrow">03 / BÌNH LUẬN ẨN DANH</span><h3>Góc chia sẻ</h3><p>Chỉ gửi bình luận sau khi phiếu đã được xác nhận; mọi bình luận đều qua kiểm duyệt.</p></div>
+ ${canComment?`<form id="comment-form" class="comment-compose"><div class="comment-compose-top"><span class="anon-avatar">${icon('shield',16)}</span><div><strong>Người bình luận ẩn danh</strong><small>Không hiển thị danh tính công khai</small></div></div><textarea id="comment-text" name="body" required minlength="5" maxlength="700" rows="4" placeholder="Chia sẻ một trải nghiệm cụ thể, lịch sự…">${e(S.commentDraft)}</textarea><div class="compose-foot"><small><span id="comment-length">${S.commentDraft.length}</span>/700 ký tự</small><button class="btn btn-primary btn-sm" type="submit">Gửi chờ duyệt</button></div></form>`:`<div class="notice">🔒 ${S.user.role==='voter'?'Hãy chọn mức trải nghiệm và nhấn xác nhận để mở bình luận.':'Tài khoản quản trị chỉ duyệt bình luận.'}</div>`}
  <div class="comment-list-head"><h4>Bình luận cộng đồng</h4><span>${fnum(S.commentTotal)} công khai</span></div><div class="comment-list">${commentItems()}</div><div class="safe-comment-note">Nhận xét là cảm nhận chủ quan. Không đăng số điện thoại, thông tin cá nhân hoặc nội dung xúc phạm.</div></aside></div></div></div>`;
 }
 function leaderModal(){const x=S.editLeader==='new'?null:S.adminLeaders.find(l=>l.id===S.editLeader);return `<div class="modal-bg" data-action="close-bg"><div class="modal large" role="dialog" aria-modal="true" aria-labelledby="edit-title"><div class="modal-head"><div><h2 id="edit-title">${x?'Chỉnh sửa tổ trưởng':'Thêm tổ trưởng dân phố'}</h2><p>Phạm vi quản lý: tỉnh Ninh Bình</p></div><button class="icon-btn" data-action="close-modal" aria-label="Đóng">×</button></div>
@@ -340,22 +338,9 @@ function leaderModal(){const x=S.editLeader==='new'?null:S.adminLeaders.find(l=>
 <div class="form-field span2"><label>Địa bàn cũ hoặc tên gọi khác (ngăn cách bằng dấu phẩy)</label><textarea name="aliases" rows="2">${e((x?.aliases||[]).join(', '))}</textarea></div>
 ${x?`<div class="form-field span2"><label><input name="active" type="checkbox" style="width:auto;margin-right:8px" ${x.active?'checked':''}>Hiển thị tổ trưởng trong bình chọn</label></div>`:''}
 </div><div class="modal-foot"><button type="button" class="btn" data-action="close-modal">Hủy</button><button class="btn btn-primary" type="submit">${icon('check',16)} Lưu thông tin</button></div></form></div></div></div>`;}
-async function onJourneyComplete(){
- const lid=S.selected,level=S.draftVote;
- if(!lid||level==null)throw Error('Vui lòng chọn một mức trải nghiệm.');
- if(S.isSaving)throw Error('Đang lưu đánh giá, vui lòng đợi.');
- const x=S.leaders.find(l=>l.id===lid);if(!x)throw Error('Không tìm thấy hồ sơ tổ trưởng.');
- if(x.my_vote===level){showToast('Bạn đã có một phiếu ở mức này; chơi thêm không tăng tổng phiếu.');return true;}
- S.isSaving=true;
- try{
-   await req('/api/vote','POST',{leader_id:lid,level});
-   await loadMain();
-   if(S.selected===lid)await loadComments(lid);
-   showToast(x.my_vote?'Đã đổi mức đánh giá, vẫn chỉ một phiếu.':'🎉 Đã chuyển tờ giấy tới nơi và lưu một phiếu.');
-   if(S.selected===lid)renderDialogOnly();
-   return true;
- }catch(err){showToast('Chưa lưu phiếu: '+err.message);throw err;}
- finally{S.isSaving=false;}
+function onJourneyComplete(){
+ // Trò chơi không gửi API bình chọn, không thay đổi phiếu đã khóa.
+ showToast('🎉 Tờ giấy đã tới nơi! Đây chỉ là trò chơi giải trí, phiếu bình chọn không thay đổi.');
 }
 function mountVisibleGame(){
  const canvas=document.getElementById('journey-game');
@@ -363,11 +348,11 @@ function mountVisibleGame(){
  const start=document.querySelector('[data-action="game-start"]');
  const jump=document.querySelector('[data-action="game-jump"]');
  window.TDPGame?.mount(canvas,{
-  level:S.draftVote||2,
+  level:S.leaders.find(l=>l.id===S.selected)?.my_vote||2,
   onComplete:onJourneyComplete,
   onProgress:p=>{const el=document.getElementById('journey-progress-bar');if(el)el.style.width=p+'%';},
   onStatus:message=>{const el=document.getElementById('game-status');if(el)el.textContent=message;},
-  onState:state=>{if(start){start.disabled=S.draftVote==null||state==='running';start.textContent=state==='running'?'Đang vượt ải…':state==='idle'?'▶ Bắt đầu vượt ải':'↻ Chơi lại';}if(jump)jump.disabled=state!=='running';}
+  onState:state=>{if(start){start.disabled=state==='running';start.textContent=state==='running'?'Đang vượt ải…':state==='idle'?'▶ Bắt đầu chơi':'↻ Chơi lại cho vui';}if(jump)jump.disabled=state!=='running';}
  });
 }
 function renderDialogOnly(){
@@ -389,7 +374,7 @@ async function refresh(){await loadMain();if(S.view==='admin')await loadAdmin();
 async function copyText(txt){try{await navigator.clipboard.writeText(txt);showToast('Đã sao chép.');}catch(err){const ta=document.createElement('textarea');ta.value=txt;ta.style.position='fixed';ta.style.left='-9999px';document.body.appendChild(ta);ta.select();let ok=document.execCommand('copy');ta.remove();showToast(ok?'Đã sao chép.':'Không thể sao chép tự động. Hãy chọn và sao chép mã trên màn hình.');}}
 async function onClick(ev){const b=ev.target.closest('[data-action]');if(!b)return;
 const act=b.dataset.action;
-const remoteActions=new Set(['guest','nav','logout','details','save-vote','remove-vote','admin-tab','moderate','remove-comment','report-comment','excel-commit','export']);
+const remoteActions=new Set(['guest','nav','logout','details','confirm-vote','admin-tab','moderate','remove-comment','report-comment','excel-commit','export']);
 if(b.getAttribute('aria-busy')==='true')return;
 if(remoteActions.has(act)){b.setAttribute('aria-busy','true');b.classList.add('is-busy');}
 try{
@@ -407,15 +392,41 @@ if(act==='guest'){const r=await req('/api/me');S.user=r.user||GUEST;S.loginError
 if(act==='nav'){S.view=b.dataset.value;S.mobileNav=false;if(S.view==='admin')await loadAdmin();render();return;}
 if(act==='logout'){await req('/api/logout','POST',{});const r=await req('/api/me');S.user=r.user||GUEST;S.selected=null;S.editLeader=null;await loadMain();render();return;}
 if(act==='voted-only'){S.votedOnly=!S.votedOnly;render();return;}
-if(act==='details'){S.selected=b.dataset.id;S.draftVote=S.leaders.find(l=>l.id===S.selected)?.my_vote??null;S.commentDraft='';S.comments=[];S.commentTotal=0;await loadComments(S.selected);renderDialogOnly();return;}
-if(act==='close-modal'){S.selected=null;S.editLeader=null;renderDialogOnly();return;}
-if(act==='close-bg'){if(ev.target===b){S.selected=null;S.editLeader=null;renderDialogOnly();}return;}
-if(act==='choose'){S.draftVote=Number(b.dataset.level);document.querySelectorAll('.v5-option').forEach(el=>el.classList.toggle('selected',Number(el.dataset.level)===S.draftVote));const starter=document.querySelector('[data-action="game-start"]');if(starter){starter.disabled=false;starter.textContent='▶ Bắt đầu vượt ải';}const jumper=document.querySelector('[data-action="game-jump"]');if(jumper)jumper.disabled=true;const quick=document.querySelector('[data-action="quick-vote"]');if(quick)quick.disabled=false;window.TDPGame?.setLevel(S.draftVote);const status=document.getElementById('game-status');if(status)status.textContent='Đã chọn '+LABELS[S.draftVote-1]+'. Bắt đầu hành trình và chạm để nhảy qua vật cản.';return;}
-if(act==='game-start'){if(S.draftVote!=null)window.TDPGame?.start();return;}
+if(act==='details'){S.selected=b.dataset.id;S.draftVote=S.leaders.find(l=>l.id===S.selected)?.my_vote??null;S.pendingLevel=null;S.commentDraft='';S.comments=[];S.commentTotal=0;await loadComments(S.selected);renderDialogOnly();return;}
+if(act==='close-modal'){S.selected=null;S.editLeader=null;S.pendingLevel=null;renderDialogOnly();return;}
+if(act==='close-bg'){if(ev.target===b){S.selected=null;S.editLeader=null;S.pendingLevel=null;renderDialogOnly();}return;}
+if(act==='choose'){
+ const x=S.leaders.find(l=>l.id===S.selected);
+ if(!x||x.my_vote!=null){showToast('Đánh giá đã được khóa; không thể lựa chọn lại.');return;}
+ if(S.isSaving)return;
+ const level=Number(b.dataset.level);
+ if(![1,2,3,4].includes(level))return;
+ S.pendingLevel=level;renderDialogOnly();
+ document.querySelector('[data-action="confirm-vote"]')?.focus({preventScroll:true});return;
+}
+if(act==='cancel-vote-confirm'){if(S.isSaving)return;S.pendingLevel=null;renderDialogOnly();return;}
+if(act==='confirm-vote'){
+ const lid=S.selected,level=S.pendingLevel,x=S.leaders.find(l=>l.id===lid);
+ if(S.isSaving)return;
+ if(!x||x.my_vote!=null){showToast('Phiếu đã được khóa.');return;}
+ if(![1,2,3,4].includes(level))throw Error('Bạn chưa chọn mức đánh giá.');
+ S.isSaving=true;b.disabled=true;
+ try{
+  await req('/api/vote','POST',{leader_id:lid,level,confirmed:true});
+  S.pendingLevel=null;S.draftVote=level;
+  await loadMain();
+  if(S.selected===lid){await loadComments(lid);renderDialogOnly();}
+  showToast('🔒 Đã ghi nhận và khóa phiếu! Không thể đổi mức hoặc hủy. Trò chơi hiện chỉ để giải trí.');
+ }catch(err){
+  // Khi mạng ngắt ngay sau khi ghi phiếu hoặc người dùng nhấn ở hai thiết bị,
+  // hãy đọc lại dữ liệu máy chủ để xác định trạng thái đã khóa.
+  try{await loadMain();if(S.selected===lid){await loadComments(lid);renderDialogOnly();}}catch(_){/* keep original error */}
+  throw err;
+ }finally{S.isSaving=false;b.disabled=false;}
+ return;
+}
+if(act==='game-start'){if(S.leaders.find(l=>l.id===S.selected)?.my_vote!=null)window.TDPGame?.start();return;}
 if(act==='game-jump'){window.TDPGame?.jump();return;}
-if(act==='quick-vote'){if(S.draftVote==null)throw Error('Hãy chọn một mức trải nghiệm.');await onJourneyComplete();return;}
-if(act==='save-vote'){if(S.isSaving)return;S.isSaving=true;try{await req('/api/vote','POST',{leader_id:S.selected,level:S.draftVote});showToast('Đã ghi nhận bình chọn thành công.');await loadMain();render();}finally{S.isSaving=false;}return;}
-if(act==='remove-vote'){if(!window.confirm('Hủy phiếu bình chọn của bạn cho tổ trưởng này?'))return;await req('/api/vote/'+encodeURIComponent(S.selected),'DELETE');await loadMain();render();showToast('Đã hủy phiếu.');return;}
 if(act==='admin-tab'){S.adminSection=b.dataset.value;await loadAdmin();render();return;}
 if(act==='moderate'){await req('/api/admin/comments/'+b.dataset.id,'PUT',{status:b.dataset.status});await loadAdmin();render();showToast('Đã cập nhật trạng thái bình luận.');return;}
 if(act==='remove-comment'){if(!window.confirm('Bạn muốn xóa bình luận này?'))return;await req('/api/comments/'+b.dataset.id,'DELETE');await loadComments(S.selected);await loadMain();render();showToast('Đã xóa bình luận.');return;}

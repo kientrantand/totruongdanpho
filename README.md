@@ -1,9 +1,9 @@
-# E-TDP — Bản đồ 6 phường và đánh giá tổ trưởng dân phố (V6.0)
+# E-TDP V6.1 — Bản đồ 6 phường, tra cứu và bình chọn tổ trưởng dân phố
 
-Ứng dụng Flask + Supabase PostgreSQL, triển khai trên Vercel. Giữ dữ liệu 126 tổ trưởng ban đầu, tra cứu bản đồ, danh sách theo phường, bảng xếp hạng, quản trị Excel, bình luận có kiểm duyệt và trò chơi **Vượt ải tổ trưởng**.
+Website Flask + Supabase PostgreSQL triển khai trên Vercel, gồm bản đồ tra cứu, kết quả xếp hạng, số liên hệ, nhập Excel quản trị, bình luận ẩn danh cần duyệt và mini-game **Vượt ải tổ trưởng**.
 
-**Để nâng cấp từ V5.4:** xem [README_V6.md](README_V6.md). Chỉ cần cập nhật 4 file trong `static/`, không chạy lại SQL và không thay biến môi trường.
+**Quan trọng nhất ở V6.1:** người dùng chọn mức trải nghiệm → thấy bước xác nhận → bấm **Xác nhận và khóa đánh giá**. Hệ thống ghi một phiếu ngay, không cho đổi mức hay hủy. Game chỉ để giải trí, chơi lại không phát sinh phiếu. [Đọc hướng dẫn cập nhật V6.1](README_V6_1.md).
 
-Với cài đặt mới, cần tạo bảng Supabase theo các file hướng dẫn SQL của phiên bản trước và thiết lập hai biến server-only `DATABASE_URL`, `ADMIN_PASSWORD`. Không đưa các biến này vào GitHub.
+Phiếu và danh sách tổ trưởng hoạt động được lưu trên Supabase, **không** lưu trong GitHub. Bạn không cần chạy SQL mới nếu nâng cấp trực tiếp từ V6.0. Biến máy chủ `DATABASE_URL` và `ADMIN_PASSWORD` được cấu hình riêng trên Vercel, không đưa vào repository.
 
-Dữ liệu thật và phiếu bình chọn được lưu ở Supabase, không nằm trong GitHub. File `data/to_truong_126.json` là dữ liệu nguồn ban đầu, không phải nơi lưu thay đổi thời gian thực. Bản chạy thử trên trình duyệt cần API/DB mới có thể ghi phiếu.
+Mỗi phiếu được khóa theo **phiên trình duyệt ẩn danh**. Việc xóa cookie, đổi trình duyệt hoặc thiết bị có thể tạo phiên khác, vì vậy không thể bảo đảm một người thật chỉ có một phiếu. Các nhận xét công khai là quan điểm cá nhân, không phải kết luận về tổ trưởng.

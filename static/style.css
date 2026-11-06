@@ -269,3 +269,22 @@ h1,h2,h3,h4,.page-title,.map-head h2,.section-head h3,.person-name,.profile-titl
 @media(max-width:720px){.journey-legend{align-items:flex-start;flex-direction:column;gap:4px}.journey-controls{justify-content:stretch!important}.journey-tip{width:100%}.journey-actions{width:100%;display:grid;grid-template-columns:1fr 1.3fr}.journey-actions .btn{min-height:44px;padding:9px 6px;font-size:.77rem}.journey-access{align-items:flex-start;flex-wrap:wrap}}
 @media(max-width:410px){.journey-actions{grid-template-columns:1fr 1.2fr}.journey-legend span,.journey-tip{font-size:.75rem}}
 @media(prefers-reduced-motion:reduce){.journey-progress>span{transition:none}.journey-actions .btn{transition:none}}
+
+/* E-TDP V6.1 — Confirmation before a permanent one-vote lock */
+.v5-option:disabled{opacity:.78;cursor:not-allowed;transform:none!important}
+.v5-option.selected:disabled{opacity:1;box-shadow:0 0 0 2px var(--state-color,#2d7bd4),0 3px 14px #233b6320}
+.vote-select-hint,.vote-locked-notice,.game-locked-note{display:flex;gap:11px;align-items:flex-start;border-radius:13px;padding:15px;margin:12px 0;line-height:1.55;font-size:.86rem}
+.vote-select-hint{background:#f3f7ff;color:#3e5e89;border:1px solid #c9d9f5}
+.vote-locked-notice{background:#eaf8ef;border:1px solid #97d6b4;color:#1e6541}
+.vote-locked-notice svg,.game-locked-note svg,.vote-select-hint svg{flex:none;margin-top:2px}
+.vote-locked-notice p,.game-locked-note p{margin:3px 0 0;font-size:.83rem;font-weight:400}
+.game-locked-note{background:#f5f7fc;border:1px dashed #b7c7df;color:#405b7e;min-height:135px;align-items:center}
+.vote-confirm-box{display:flex;gap:13px;margin:14px 0 18px;border:2px solid #387ce1;background:linear-gradient(130deg,#f3f8ff,#fff);border-radius:15px;padding:17px;box-shadow:0 8px 25px #387ce116}
+.vote-confirm-icon{width:43px;height:43px;display:flex;align-items:center;justify-content:center;border-radius:12px;background:#e0edff;color:#235ca9;flex:none}
+.vote-confirm-content{min-width:0;flex:1;color:#354d70}
+.vote-confirm-content h4{margin:0 0 7px;font-size:1rem;color:#17447f}
+.vote-confirm-content p{font-size:.85rem;line-height:1.65;margin:5px 0}
+.vote-confirm-content p strong{color:#b7353f}
+.vote-confirm-actions{display:flex;flex-wrap:wrap;gap:9px;margin-top:14px}
+.vote-confirm-actions .btn{min-height:42px}
+@media(max-width:600px){.vote-confirm-box{padding:13px;gap:9px}.vote-confirm-icon{width:35px;height:35px}.vote-confirm-actions{display:grid;grid-template-columns:1fr;width:100%}.vote-confirm-actions .btn{width:100%;justify-content:center}}

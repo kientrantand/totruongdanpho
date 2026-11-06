@@ -28,7 +28,7 @@ function mount(canvas,options={}){
  reloadMascot();
  function inform(msg){options.onStatus?.(msg);}
  function progress(){options.onProgress?.(Math.round(clamp((x-102)/690,0,1)*100));}
- function reset(){x=102;vY=0;jumpY=0;clock=0;flash=0;crashes=0;particles=[];announced.clear();state='idle';finishing=false;progress();inform('Chọn mức trải nghiệm, bấm “Bắt đầu vượt ải” rồi chạm màn chơi để nhảy.');}
+ function reset(){x=102;vY=0;jumpY=0;clock=0;flash=0;crashes=0;particles=[];announced.clear();state='idle';finishing=false;progress();inform('Đây là trò chơi cho vui. Nhấn “Bắt đầu chơi” rồi chạm để nhảy.');}
  function start(){if(!alive||finishing)return false;if(state==='running')return false;
   x=102;vY=0;jumpY=0;clock=0;crashes=0;particles=[];announced.clear();state='running';progress();inform('Tờ giấy đang lên đường! Chạm vào cảnh hoặc bấm Nhảy để vượt vật cản.');options.onState?.('running');return true;
  }
@@ -82,7 +82,7 @@ function mount(canvas,options={}){
  }
  function overlay(){if(state==='idle'||state==='finished'){ctx.fillStyle='#14304f33';ctx.fillRect(0,114,WIDTH,180);
   const center=VIEW_W/2;round(center-202,143,404,113,23,'#fffffff2');ctx.textAlign='center';ctx.fillStyle='#244c76';ctx.font='bold 26px Arial,sans-serif';ctx.fillText(state==='finished'?'HOÀN THÀNH CHUYẾN ĐI!':'SẴN SÀNG VƯỢT ẢI?',center,185);
-  ctx.font='16px Arial,sans-serif';ctx.fillText(state==='finished'?'Bác đã nhận giấy. Đánh giá được gửi đi.':'Chọn cảm xúc · Bắt đầu · Chạm để nhảy',center,215);ctx.textAlign='left';}
+  ctx.font='16px Arial,sans-serif';ctx.fillText(state==='finished'?'Chơi cho vui · Phiếu không thay đổi':'Phiếu đã khóa · Bắt đầu · Chạm để nhảy',center,215);ctx.textAlign='left';}
  }
  function draw(t){if(!alive)return;
   if(document.hidden){last=t;raf=requestAnimationFrame(draw);return;}
@@ -94,8 +94,8 @@ function mount(canvas,options={}){
   for(const [i,o] of MODES[level-1].obstacles.entries()){
    if(!announced.has(i)&&oldX<o.x+12&&x>=o.x-21){announced.add(i);if(jumpY<26)bump(o.type);}
   }
-  if(x>=794&&!finishing){state='finished';finishing=true;progress();options.onState?.('finished');inform('Đã tới nơi! Đang lưu một phiếu đánh giá vào hệ thống…');
-   Promise.resolve().then(()=>options.onComplete?.()).then(()=>{if(alive){inform('🎉 Bác đã nhận giấy! Phiếu đã được xử lý; bạn có thể chơi lại.');options.onState?.('done');}}).catch(err=>{if(alive){inform('Chưa ghi phiếu được: '+(err?.message||'Vui lòng thử lại.'));options.onState?.('error');}}).finally(()=>{finishing=false;});
+  if(x>=794&&!finishing){state='finished';finishing=true;progress();options.onState?.('finished');inform('Tờ giấy đã đến nơi! Đây là trò chơi giải trí, phiếu đã xác nhận không thay đổi.');
+   Promise.resolve().then(()=>options.onComplete?.()).then(()=>{if(alive){inform('🎉 Bác đã nhận giấy! Bạn có thể chơi lại; kết quả bình chọn không thay đổi.');options.onState?.('done');}}).catch(err=>{if(alive){inform('Trò chơi gặp lỗi: '+(err?.message||'Vui lòng thử lại.'));options.onState?.('error');}}).finally(()=>{finishing=false;});
   }
   if(t-lastUpdate>100){lastUpdate=t;progress();}
  }
