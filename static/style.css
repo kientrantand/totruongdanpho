@@ -518,3 +518,10 @@ html,body,#app,#app *,button,input,select,textarea{
  #app .comment-list-head{flex-wrap:wrap}
 }
 @media(prefers-reduced-motion:reduce){#app .profile-read-comments,#app .v5-profile{transition:none;scroll-behavior:auto}}
+
+/* V7.2: bình luận gắn theo hồ sơ; luôn hiện người được nhận xét */
+#app .comment-owner{display:flex;flex-direction:column;gap:4px;margin:2px 0 14px;padding:13px 15px;border-radius:13px;background:#eaf2ff;border:1px solid #cfdef6;color:#193b74}
+#app .comment-owner strong{display:flex;align-items:center;gap:7px;flex-wrap:wrap;font-size:15px}
+#app .comment-owner small{font-size:12px;color:#4e6791}
+#app .moderation-head strong{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+#app .moderation-head strong small{font-size:11px;color:#6c7791;font-weight:500}

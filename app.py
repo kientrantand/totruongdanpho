@@ -1,4 +1,4 @@
-"""E-TDP V7.1: Flask API + Supabase PostgreSQL; bình luận công khai và quản trị đầy đủ.
+"""E-TDP V7.2: bình luận được ràng buộc chặt chẽ theo từng leader_id.
 
 Dữ liệu trong schema app, mọi thao tác ghi qua backend. Không có mật khẩu trong repo.
 """
@@ -407,28 +407,38 @@ def iso_row(row, *keys):
 
 
 def comments_response(user):
-    """Everyone reads approved text. Moderators additionally read every status.
+    """Đọc bình luận CHỈ của tổ trưởng được chọn, với định danh rõ ràng.
 
-    Anonymous visitors see their own pending comments, never those of others.
-    Administrator moderation never exposes participant identity to the client.
+    Bảo vệ ở hai lớp: PostgreSQL lọc theo leader_id, API trả leader_id
+    ở cả cấp hồ sơ và từng bình luận để frontend chặn mọi dữ liệu sai hồ sơ.
+    Chỉ bình luận approved hiển thị với người khác, quản trị xem tất cả.
     """
     lid = checked_leader(request.args.get('leader_id'))
+    owner = query("""SELECT id,name,area,ward FROM app.leaders
+                  WHERE id=%s AND active=TRUE""", (lid,), one=True)
     if user and user['role'] == 'admin':
-        rows = query('''SELECT id,body,status,created_at,FALSE AS is_mine
-                    FROM app.comments WHERE leader_id=%s
-                    ORDER BY id DESC LIMIT 500''', (lid,))
+        rows = query("""SELECT c.id,c.leader_id,c.body,c.status,c.created_at,
+                      FALSE AS is_mine FROM app.comments c
+                      WHERE c.leader_id=%s ORDER BY c.id DESC LIMIT 500""", (lid,))
     elif user:
-        rows = query('''SELECT c.id,c.body,c.status,c.created_at,
-            (c.participant_id=%s) AS is_mine FROM app.comments c
-            WHERE c.leader_id=%s AND (c.status='approved' OR c.participant_id=%s)
-            ORDER BY id DESC LIMIT 200''', (user['id'],lid,user['id']))
+        rows = query("""SELECT c.id,c.leader_id,c.body,c.status,c.created_at,
+                      (c.participant_id=%s) AS is_mine FROM app.comments c
+                      WHERE c.leader_id=%s
+                        AND (c.status='approved' OR c.participant_id=%s)
+                      ORDER BY c.id DESC LIMIT 200""", (user['id'], lid, user['id']))
     else:
-        rows = query('''SELECT id,body,status,created_at,FALSE as is_mine
-               FROM app.comments WHERE leader_id=%s AND status='approved'
-               ORDER BY id DESC LIMIT 200''', (lid,))
-    n = scalar("SELECT count(*) FROM app.comments WHERE leader_id=%s AND status='approved'",(lid,))
-    return jsonify(comments=[iso_row(r,'created_at') for r in rows],
-                   total_approved=n, total_visible=len(rows))
+        rows = query("""SELECT c.id,c.leader_id,c.body,c.status,c.created_at,
+                      FALSE AS is_mine FROM app.comments c
+                      WHERE c.leader_id=%s AND c.status='approved'
+                      ORDER BY c.id DESC LIMIT 200""", (lid,))
+    # Không thể hiện bình luận của một mã khác ngay cả khi kết quả DB sai.
+    rows = [r for r in rows if str(r['leader_id']) == lid]
+    n = scalar("""SELECT count(*) FROM app.comments
+                  WHERE leader_id=%s AND status='approved' """, (lid,))
+    return jsonify(leader_id=lid, leader={'id': owner['id'], 'name': owner['name'],
+                   'area': owner['area'], 'ward': owner['ward']},
+                   comments=[iso_row(r,'created_at') for r in rows],
+                   total_approved=int(n or 0), total_visible=len(rows))
 
 
 @app.get('/api/public/comments')
