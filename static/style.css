@@ -525,3 +525,42 @@ html,body,#app,#app *,button,input,select,textarea{
 #app .comment-owner small{font-size:12px;color:#4e6791}
 #app .moderation-head strong{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
 #app .moderation-head strong small{font-size:11px;color:#6c7791;font-weight:500}
+
+/* E-TDP v7.3: tìm danh sách theo phường bằng checkbox và đọc bình luận theo hồ sơ */
+.etdp-search-bar .filters .search-wrap{flex:1 1 260px}
+.etdp-ward-checkbox{display:inline-flex;align-items:center;gap:7px;border:1px solid #cddbf1;border-radius:10px;padding:9px 10px;background:#fff;color:#315580;font-size:.76rem;font-weight:750;white-space:nowrap;cursor:pointer;min-height:43px;user-select:none}
+.etdp-ward-checkbox input{width:17px;height:17px;margin:0;accent-color:#226bdf;cursor:pointer}
+.etdp-ward-checkbox:focus-within{outline:2px solid #84b0fb;outline-offset:2px}
+.etdp-directory-th,.etdp-directory-row{grid-template-columns:minmax(155px,1.35fr) minmax(110px,1fr) minmax(100px,.8fr) minmax(142px,1fr) minmax(102px,.72fr) minmax(112px,.83fr);gap:10px}
+.etdp-row-comments{min-width:0}
+.etdp-comment-count{display:inline-flex;gap:5px;align-items:center;justify-content:center;border:1px solid #c7daf8;border-radius:10px;padding:8px 10px;background:#f0f6ff;color:#1b58a3;font-size:.75rem;cursor:pointer;transition:background .12s ease,transform .12s ease}
+.etdp-comment-count:hover,.etdp-comment-count:focus-visible{background:#deedff;transform:translateY(-1px)}
+.etdp-comment-count b{font-variant-numeric:tabular-nums;font-size:.84rem}
+.etdp-comment-count span{white-space:nowrap}
+.etdp-comment-tabs{display:flex;gap:7px;flex-wrap:wrap;margin:2px 0 16px}
+.etdp-comment-tab{border:1px solid #d7e2f0;border-radius:10px;background:#f7f9fd;color:#3c577a;padding:9px 12px;font-size:.8rem;font-weight:750;cursor:pointer}
+.etdp-comment-tab.active{color:#fff;background:#255ecc;border-color:#255ecc}
+.etdp-comment-tab b{font-variant-numeric:tabular-nums;opacity:.9;margin-left:3px}
+.etdp-peek-bg{z-index:160}
+.etdp-peek-modal{width:min(790px,calc(100vw - 24px));max-height:90dvh;display:flex;flex-direction:column;overflow:hidden}
+.etdp-peek-modal .modal-head{flex:none;background:#f6f9ff}
+.etdp-peek-body{padding:18px 22px 22px;overflow-y:auto;overscroll-behavior:contain;min-height:80px}
+.etdp-peek-overview{display:flex;flex-wrap:wrap;align-items:center;gap:6px;border:1px solid #dce7f9;background:#f5f9ff;border-radius:11px;padding:12px;margin-bottom:12px;color:#2f5484;font-size:.85rem}
+.etdp-peek-overview small{display:block;flex-basis:100%;color:#61728b;margin-top:2px}
+.etdp-peek-list{display:grid;gap:10px}
+.etdp-peek-item{border:1px solid #e3ebf4;border-radius:12px;padding:14px 16px;background:#fff}
+.etdp-peek-item-head{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;font-size:.78rem;color:#64758e}
+.etdp-peek-item p{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.92rem;line-height:1.6;margin:11px 0 0;color:#243a5c}
+.etdp-peek-actions{display:flex;justify-content:flex-end;margin-top:12px}
+.etdp-peek-more{width:100%;justify-content:center;margin-top:13px}
+.etdp-peek-loading{text-align:center;color:#41658d;padding:12px}
+@media(max-width:1050px){.etdp-directory-th,.etdp-directory-row{min-width:860px}.etdp-directory-grid{overflow-x:auto}}
+@media(max-width:650px){.etdp-search-bar .filters{display:flex;gap:8px}.etdp-search-bar .filters .search-wrap{order:1;width:100%;flex:1 1 100%}.etdp-search-bar .filters .etdp-ward-checkbox{order:2;flex:0 0 auto;width:auto;padding:8px 10px}.etdp-search-bar #ward-select{order:3;flex:1 1 100%}.etdp-search-bar #sort-select{order:4;flex:1 1 100%}.etdp-peek-body{padding:14px 12px}.etdp-peek-modal{max-height:95dvh}}
+@media(prefers-reduced-motion:reduce){.etdp-comment-count{transition:none}}
+
+/* V7.4: phân biệt rõ bình luận công khai và đã bị xóa. */
+.status-approved,.comment-status-approved{background:#e3f7ed!important;color:#137a4d!important}
+.status-rejected,.comment-status-rejected{background:#fae9ec!important;color:#a13142!important}
+.btn-danger-soft{background:#fff1f1!important;color:#9b2e38!important;border:1px solid #edc1c7!important}
+.moderation-actions .btn,.etdp-peek-actions .btn{min-height:36px}
+.moderation-item:has(.status-rejected){border-left:3px solid #ca7b84}

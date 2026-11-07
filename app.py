@@ -1,4 +1,4 @@
-"""E-TDP V7.2: bình luận được ràng buộc chặt chẽ theo từng leader_id.
+"""E-TDP V7.4: bình luận được ràng buộc chặt chẽ theo từng leader_id.
 
 Dữ liệu trong schema app, mọi thao tác ghi qua backend. Không có mật khẩu trong repo.
 """
@@ -424,7 +424,7 @@ def comments_response(user):
         rows = query("""SELECT c.id,c.leader_id,c.body,c.status,c.created_at,
                       (c.participant_id=%s) AS is_mine FROM app.comments c
                       WHERE c.leader_id=%s
-                        AND (c.status='approved' OR c.participant_id=%s)
+                        AND (c.status='approved' OR (c.status='pending' AND c.participant_id=%s))
                       ORDER BY c.id DESC LIMIT 200""", (user['id'], lid, user['id']))
     else:
         rows = query("""SELECT c.id,c.leader_id,c.body,c.status,c.created_at,
@@ -451,6 +451,52 @@ def public_comments():
 def comments():
     return comments_response(require())
 
+
+
+
+def comments_page_response(user):
+    '''Page one leader's comments, five at a time; expose no unpublished content to strangers.'''
+    lid = checked_leader(request.args.get('leader_id'))
+    try:
+        offset = int(request.args.get('offset', '0'))
+        limit = int(request.args.get('limit', '5'))
+    except (TypeError, ValueError):
+        return fail('Tham số phân trang không hợp lệ.')
+    if not 0 <= offset <= 100000 or limit != 5:
+        return fail('Mỗi lần chỉ được tải 5 bình luận.')
+    owner = query('SELECT id,name,area,ward FROM app.leaders WHERE id=%s AND active=TRUE',
+                  (lid,), one=True)
+    if user and user['role'] == 'admin':
+        where = 'c.leader_id=%s'
+        args = (lid,)
+    elif user:
+        where = "c.leader_id=%s AND (c.status='approved' OR (c.status='pending' AND c.participant_id=%s))"
+        args = (lid, user['id'])
+    else:
+        where = "c.leader_id=%s AND c.status='approved'"
+        args = (lid,)
+    total = scalar('SELECT count(*) FROM app.comments c WHERE ' + where, args)
+    rows = query('''SELECT c.id,c.leader_id,c.body,c.status,c.created_at
+                    FROM app.comments c WHERE ''' + where +
+                 ''' ORDER BY c.id DESC LIMIT %s OFFSET %s''', args + (limit, offset))
+    rows = [r for r in rows if str(r['leader_id']) == lid]
+    return jsonify(leader_id=lid,
+                   leader={'id':owner['id'],'name':owner['name'],
+                           'area':owner['area'],'ward':owner['ward']},
+                   comments=[iso_row(r,'created_at') for r in rows],
+                   total=int(total or 0), offset=offset,
+                   has_more=(offset + len(rows)) < int(total or 0))
+
+
+@app.get('/api/public/comment-pages')
+def public_comment_pages():
+    return comments_page_response(None)
+
+
+@app.get('/api/comment-pages')
+@protected()
+def comment_pages():
+    return comments_page_response(require())
 
 @app.post('/api/comments')
 @protected(write=True)
@@ -488,11 +534,21 @@ def comment():
 @app.delete('/api/comments/<int:cid>')
 @protected(write=True)
 def remove_comment(cid):
-    user=require()
-    row=query('SELECT participant_id FROM app.comments WHERE id=%s',(cid,),one=True)
-    if not row or (row['participant_id']!=user['id'] and user['role']!='admin'):
-        return fail('Bình luận không tồn tại hoặc không thuộc về bạn.',404)
-    g.db.execute('DELETE FROM app.comments WHERE id=%s',(cid,))
+    """Người gửi chỉ được hủy bình luận đang chờ duyệt.
+
+    Khi đã duyệt, ẩn hay từ chối thì chỉ quản trị mới xử lý qua API admin.
+    Đây là giới hạn ở máy chủ, không phụ thuộc nút ẩn trên giao diện.
+    """
+    user = require()
+    if user['role'] == 'admin':
+        return fail('Quản trị viên hãy dùng chức năng quản lý bình luận.', 403)
+    row = query('SELECT participant_id,status FROM app.comments WHERE id=%s FOR UPDATE',
+                (cid,), one=True)
+    if not row or row['participant_id'] != user['id']:
+        return fail('Bình luận không tồn tại hoặc không thuộc về bạn.', 404)
+    if row['status'] != 'pending':
+        return fail('Bình luận đã được xử lý nên bạn không thể xóa.', 403)
+    g.db.execute('DELETE FROM app.comments WHERE id=%s AND status=%s', (cid, 'pending'))
     return jsonify(ok=True)
 
 
@@ -781,15 +837,50 @@ def moderation_queue():
 
 
 @app.put('/api/admin/comments/<int:cid>')
-@protected(admin=True,write=True)
+@protected(admin=True, write=True)
 def moderate(cid):
-    status=payload().get('status')
-    if status not in ('approved','rejected','hidden','pending'):
+    """Không duyệt lại bình luận đã công khai hoặc đã bị xóa.
+
+    pending -> approved/hidden/rejected
+    hidden  -> approved/rejected
+    approved -> chỉ xóa mềm qua DELETE admin
+    rejected -> trạng thái cuối, lưu để quản trị xem lịch sử.
+    """
+    status = payload().get('status')
+    if status not in ('approved', 'hidden', 'rejected'):
         return fail('Trạng thái duyệt không hợp lệ.')
-    cur=g.db.execute('UPDATE app.comments SET status=%s,moderated_at=now() WHERE id=%s',(status,cid))
-    if cur.rowcount==0:
-        return fail('Bình luận không tồn tại.',404)
-    return jsonify(ok=True)
+    row = query('SELECT status FROM app.comments WHERE id=%s FOR UPDATE', (cid,), one=True)
+    if not row:
+        return fail('Bình luận không tồn tại.', 404)
+    current = row['status']
+    allowed = {'pending': ('approved', 'hidden', 'rejected'),
+               'hidden': ('approved', 'rejected')}
+    if status not in allowed.get(current, ()):
+        return fail('Trạng thái này đã được xử lý. Bình luận đã công khai chỉ có thể xóa.', 409)
+    g.db.execute('UPDATE app.comments SET status=%s,moderated_at=now() WHERE id=%s',
+                 (status, cid))
+    return jsonify(ok=True, status=status,
+                   label='Đã công khai' if status == 'approved' else
+                         'Đã bị xóa' if status == 'rejected' else 'Đã ẩn')
+
+
+@app.delete('/api/admin/comments/<int:cid>')
+@protected(admin=True, write=True)
+def admin_delete_comment(cid):
+    """Xóa mềm: khỏi trang công khai nhưng giữ nội dung để quản trị đối chiếu.
+
+    Tận dụng trạng thái rejected đã được constraint bảng hiện tại chấp nhận,
+    nên không cần migration và không làm mất lịch sử hay khóa ngoại.
+    """
+    row = query('SELECT status,leader_id FROM app.comments WHERE id=%s FOR UPDATE',
+                (cid,), one=True)
+    if not row:
+        return fail('Bình luận không tồn tại.', 404)
+    if row['status'] == 'rejected':
+        return fail('Bình luận đã bị xóa khỏi phần công khai.', 409)
+    g.db.execute("UPDATE app.comments SET status='rejected',moderated_at=now() WHERE id=%s", (cid,))
+    return jsonify(ok=True, deleted_id=cid, leader_id=row['leader_id'],
+                   status='rejected', label='Đã bị xóa')
 
 
 @app.get('/api/admin/export.csv')
