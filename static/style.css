@@ -564,3 +564,35 @@ html,body,#app,#app *,button,input,select,textarea{
 .btn-danger-soft{background:#fff1f1!important;color:#9b2e38!important;border:1px solid #edc1c7!important}
 .moderation-actions .btn,.etdp-peek-actions .btn{min-height:36px}
 .moderation-item:has(.status-rejected){border-left:3px solid #ca7b84}
+
+
+/* E-TDP V7.5: gradient palette, IP moderation, responsive fast send */
+html{--etdp-gradient-from:#1c68de;--etdp-gradient-to:#2834a9;--etdp-sidebar-from:#10234d;--etdp-sidebar-to:#123369;--etdp-accent:#1e67dc}
+html[data-theme="emerald"]{--etdp-gradient-from:#059b87;--etdp-gradient-to:#03695c;--etdp-sidebar-from:#073e42;--etdp-sidebar-to:#085962;--etdp-accent:#038b75}
+html[data-theme="violet"]{--etdp-gradient-from:#7d47d4;--etdp-gradient-to:#433ab2;--etdp-sidebar-from:#2c1959;--etdp-sidebar-to:#382378;--etdp-accent:#7550c9}
+html[data-theme="sunset"]{--etdp-gradient-from:#e87636;--etdp-gradient-to:#c84757;--etdp-sidebar-from:#69322a;--etdp-sidebar-to:#812e49;--etdp-accent:#d65e3f}
+html[data-theme="rose"]{--etdp-gradient-from:#d84d85;--etdp-gradient-to:#8b4ab6;--etdp-sidebar-from:#542447;--etdp-sidebar-to:#592669;--etdp-accent:#c84281}
+html[data-theme="slate"]{--etdp-gradient-from:#34536f;--etdp-gradient-to:#202f56;--etdp-sidebar-from:#152438;--etdp-sidebar-to:#182a45;--etdp-accent:#49658f}
+html[data-theme] body{background:linear-gradient(140deg,color-mix(in srgb,var(--etdp-gradient-from) 7%,white),#f8fbff 62%,color-mix(in srgb,var(--etdp-gradient-to) 6%,white))}
+html[data-theme] .sidebar{background:linear-gradient(165deg,var(--etdp-sidebar-from),var(--etdp-sidebar-to))!important}
+html[data-theme] .sidebar .side-nav button.active,html[data-theme] .etdp-search-hero,html[data-theme] .version-tag,html[data-theme] .etdp-list-ward.active,html[data-theme] .etdp-ranked-panel .home-rank-tabs button.active{background:linear-gradient(108deg,var(--etdp-gradient-from),var(--etdp-gradient-to))!important}
+html[data-theme] .profile-banner{background:radial-gradient(circle at 90% 12%,#ffffff30,transparent 35%),linear-gradient(115deg,var(--etdp-gradient-from),var(--etdp-gradient-to))!important}
+html[data-theme] .btn-primary:not(:disabled){background:linear-gradient(110deg,var(--etdp-gradient-from),var(--etdp-gradient-to));border-color:transparent;color:#fff}
+html[data-theme] .topbar-menu:hover,html[data-theme] .etdp-theme-picker select:focus-visible{outline:2px solid var(--etdp-accent);outline-offset:2px}
+.etdp-theme-picker{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;font-size:.72rem;color:#627494;font-weight:700}
+.etdp-theme-picker select{max-width:155px;padding:7px 24px 7px 9px;border:1px solid #d8e1f0;background:#fff;color:#243c61;border-radius:9px;cursor:pointer;font-size:.78rem}
+.etdp-ip-admin{margin:11px 0 13px;padding:13px 14px;background:#f4f7fe;border:1px solid #dce5f5;border-radius:12px;color:#293e5a}
+.etdp-ip-heading{display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:.84rem}
+.etdp-ip-admin code{font-size:.85rem;word-break:break-all;color:#244d9d;background:#e7eefc;padding:3px 7px;border-radius:6px}
+.etdp-ip-admin small{font-size:.72rem;color:#6f7f96;display:block;margin-top:7px;line-height:1.5}
+.etdp-ip-row{display:flex;align-items:center;gap:9px;margin-top:10px}
+.etdp-ip-row input{flex:1;min-width:0;padding:10px 12px;border:1px solid #bdcee7;border-radius:9px;background:#fff;color:#1d3552;font:inherit;font-size:.82rem}
+.etdp-ip-row input:focus-visible{outline:2px solid #6793e4}
+.etdp-privacy-ack{display:flex;align-items:flex-start;gap:10px;margin:13px 0 4px;font-size:.77rem;color:#586c85;line-height:1.55;cursor:pointer}
+.etdp-privacy-ack input{width:17px;height:17px;flex:none;margin:2px 0;accent-color:var(--etdp-accent)}
+.etdp-send-btn{min-width:94px;transition:transform .13s,box-shadow .13s,opacity .13s}
+.etdp-send-btn:not(:disabled):active{transform:scale(.97)}
+.etdp-send-btn[aria-busy="true"]{opacity:.76;cursor:progress}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap}
+@media(max-width:780px){.etdp-theme-picker span{display:none}.etdp-theme-picker select{max-width:115px}.etdp-ip-row{flex-wrap:wrap}.etdp-ip-row button{width:100%}}
+@media(prefers-reduced-motion:reduce){.etdp-send-btn{transition:none}}

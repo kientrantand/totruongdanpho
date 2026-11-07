@@ -1,4 +1,4 @@
-"""E-TDP V7.4: bình luận được ràng buộc chặt chẽ theo từng leader_id.
+"""E-TDP V7.5: bình luận được ràng buộc chặt chẽ theo từng leader_id.
 
 Dữ liệu trong schema app, mọi thao tác ghi qua backend. Không có mật khẩu trong repo.
 """
@@ -6,6 +6,7 @@ import csv
 import hashlib
 import hmac
 import io
+import ipaddress
 import json
 import os
 import re
@@ -75,6 +76,23 @@ def payload():
     if not isinstance(obj, dict):
         raise ValueError('Dữ liệu gửi phải ở định dạng JSON.')
     return obj
+
+
+def commenter_ip():
+    """Capture network IP for moderation only; don't trust client-supplied forwarded
+    headers when running locally or behind an arbitrary untrusted proxy.
+    On Vercel, the platform supplies/overwrites these headers.
+    Returns None if the address is absent or invalid.
+    """
+    raw = request.remote_addr or ''
+    if os.environ.get('VERCEL') == '1' or os.environ.get('VERCEL_ENV') in ('production', 'preview', 'development'):
+        raw = (request.headers.get('X-Vercel-Forwarded-For') or
+               request.headers.get('X-Forwarded-For') or raw)
+    raw = raw.split(',')[0].strip()
+    try:
+        return str(ipaddress.ip_address(raw))
+    except ValueError:
+        return None
 
 
 def set_session(response, token):
@@ -505,6 +523,8 @@ def comment():
     if user['role'] not in ('voter', 'admin'):
         return fail('Phiên truy cập không hợp lệ.',403)
     data=payload()
+    if data.get('privacy_ack') is not True:
+        return fail('Vui lòng xác nhận đã đọc thông tin về việc ghi nhận IP để kiểm duyệt.', 400)
     lid=checked_leader(data.get('leader_id'))
     # Bắt buộc có phiếu trong PostgreSQL; không tin trạng thái giao diện.
     has_vote=scalar('SELECT 1 FROM app.votes WHERE participant_id=%s AND leader_id=%s',
@@ -525,8 +545,10 @@ def comment():
                 AND created_at>=now()-interval '24 hours' ''',(user['id'],lid))
     if q>=3:
         return fail('Tối đa 3 bình luận cho một tổ trưởng trong 24 giờ.',429)
-    cid=scalar('''INSERT INTO app.comments(leader_id,participant_id,body)
-            VALUES(%s,%s,%s) RETURNING id''',(lid,user['id'],text))
+    # IP is only stored in PostgreSQL and only returned via admin endpoints.
+    cid=scalar('''INSERT INTO app.comments(leader_id,participant_id,body,author_ip)
+            VALUES(%s,%s,%s,%s::inet) RETURNING id''',
+            (lid,user['id'],text,commenter_ip()))
     return jsonify(ok=True,id=cid,status='pending',
                    message='Đã nhận bình luận. Chỉ công khai sau khi quản trị viên duyệt.'),201
 
@@ -827,13 +849,37 @@ def import_xlsx():
 @app.get('/api/admin/comments')
 @protected(admin=True)
 def moderation_queue():
+    # Private: never return author_ip / author_label in any public API.
     rows=query('''SELECT c.id,c.leader_id,l.name leader_name,l.area,l.ward,
-          c.body,c.status,c.created_at,
+          c.body,c.status,c.created_at,host(c.author_ip) AS author_ip,
+          COALESCE(labels.label,'') AS author_label,
           (SELECT count(*) FROM app.comment_reports cr WHERE cr.comment_id=c.id) reports
           FROM app.comments c JOIN app.leaders l ON l.id=c.leader_id
+          LEFT JOIN app.comment_ip_labels labels ON labels.ip=c.author_ip
           ORDER BY CASE c.status WHEN 'pending' THEN 0 WHEN 'hidden' THEN 1 ELSE 2 END,
           c.id DESC LIMIT 500''')
     return jsonify(comments=[iso_row(r,'created_at') for r in rows])
+
+
+@app.put('/api/admin/ip-labels')
+@protected(admin=True, write=True)
+def save_ip_label():
+    # Admin-only private IP label; not a verified identity.
+    data=payload()
+    raw=str(data.get('ip','')).strip()
+    try:
+        addr=str(ipaddress.ip_address(raw))
+    except ValueError:
+        return fail('Địa chỉ IP không hợp lệ.')
+    label=clean(data.get('label'), 80)
+    if label:
+        g.db.execute('''INSERT INTO app.comment_ip_labels(ip,label,updated_at)
+           VALUES (%s::inet,%s,now())
+           ON CONFLICT (ip) DO UPDATE SET label=EXCLUDED.label,
+           updated_at=now()''', (addr, label))
+    else:
+        g.db.execute('DELETE FROM app.comment_ip_labels WHERE ip=%s::inet', (addr,))
+    return jsonify(ok=True,ip=addr,label=label)
 
 
 @app.put('/api/admin/comments/<int:cid>')

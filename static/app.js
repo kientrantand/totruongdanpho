@@ -11,6 +11,13 @@ const LABELS = [
 const COLORS = ['#18a993','#65b4e8','#eeaa53','#e5787c'];
 const WARDS = ['phường Trường Thi','phường Đông A','phường Thành Nam','phường Nam Định','phường Thiên Trường','phường Mỹ Lộc'];
 const GUEST = {role:'guest', label:'Khách tra cứu', csrf:''};
+const THEMES={ocean:'Đại dương',emerald:'Ngọc lục bảo',violet:'Tím hoàng hôn',sunset:'Cam san hô',rose:'Hồng ngọc',slate:'Xanh than'};
+function setTheme(name){
+  const key=Object.hasOwn(THEMES,name)?name:'ocean';
+  S.theme=key;document.documentElement.dataset.theme=key;
+  try{localStorage.setItem('etdp-theme',key);}catch(_){}
+}
+
 const GIS = [
  ['phường Trường Thi','13777_truong_thi'],
  ['phường Đông A','13693_dong_a'],
@@ -22,7 +29,7 @@ const GIS = [
 const GIS_BASE = 'https://raw.githubusercontent.com/thanglequoc/vietnamese-provinces-database/master/json/geojson/37_ninh_binh/wards/';
 
 const S = {
-  user: GUEST, leaders: [], overview: null, mapFeatures:[], mapStatus:'loading', view:'directory', q:'', ward:'', sort:'area',
+  user: GUEST, theme:'ocean', commentSubmitting:false, leaders: [], overview: null, mapFeatures:[], mapStatus:'loading', view:'directory', q:'', ward:'', sort:'area',
   votedOnly: false, selected: null, draftVote: null, pendingLevel: null, authRole:'admin', loginError:'',
   adminSection: 'leaders', adminLeaders:[], showWardList:false, sidebarCollapsed:false, mobileNav:false, importResult:null, importFile:null, rankMode:'easy', listLimit:80, mapShapeHTML:null, mapCacheLabels:null, mapViewBox:null,
   featuredId:null, editLeader:null, isSaving:false, rankings:{easy:[],difficult:[],minimum_votes:5},
@@ -259,7 +266,7 @@ return `<div class="shell ${S.sidebarCollapsed?'sidebar-collapsed':''} ${S.mobil
     ${navItem('directory','home','Trang chủ & bản đồ')}${navItem('results','trophy','Xếp hạng đánh giá')}
     ${S.user.role==='admin'?navItem('admin','shield','Quản trị hệ thống'):''}
   </nav><div class="sidebar-bottom"><div class="account-chip"><div class="avatar">${initial(S.user.label)}</div><div style="min-width:0"><b title="${e(S.user.label)}">${e(S.user.label)}</b><small>${S.user.role==='admin'?'Quản trị viên':S.user.role==='guest'?'Tra cứu công khai':'Khách ẩn danh'}</small></div></div><button class="logout-btn" data-action="${S.user.role==='admin'?'logout':'show-login'}">${icon('logout',15)} ${S.user.role==='admin'?'Đăng xuất':'Quản trị viên'}</button></div>
-  </aside><main class="main"><header class="topbar"><button class="topbar-menu" data-action="sidebar-toggle" aria-label="Mở hoặc đóng menu">${icon('menu',22)}</button><div class="breadcrumbs">Hệ thống <span>›</span> <b>${titles[S.view]||''}</b></div><div class="topbar-right"><span class="etdp-top-stats">${dashboardStat("people",S.overview?.leader_count??S.leaders.length,"Tổ trưởng")}${dashboardStat("pin",6,"Phường")}${dashboardStat("chart",S.overview?.total_votes||0,"Lượt đánh giá")}</span><span class="version-tag">E-TDP v7.4</span><button class="btn btn-sm btn-ghost" data-action="${S.user.role==='admin'?'logout':'show-login'}" style="color:#7386a5">${S.user.role==='admin'?'Đăng xuất':'Quản trị'}</button></div></header>
+  </aside><main class="main"><header class="topbar"><button class="topbar-menu" data-action="sidebar-toggle" aria-label="Mở hoặc đóng menu">${icon('menu',22)}</button><div class="breadcrumbs">Hệ thống <span>›</span> <b>${titles[S.view]||''}</b></div><div class="topbar-right"><span class="etdp-top-stats">${dashboardStat("people",S.overview?.leader_count??S.leaders.length,"Tổ trưởng")}${dashboardStat("pin",6,"Phường")}${dashboardStat("chart",S.overview?.total_votes||0,"Lượt đánh giá")}</span><label class="etdp-theme-picker" for="theme-select"><span>Giao diện</span><select id="theme-select" aria-label="Chọn tông màu gradient">${Object.entries(THEMES).map(([key,value])=>`<option value="${key}" ${S.theme===key?'selected':''}>${value}</option>`).join('')}</select></label><span class="version-tag">E-TDP v7.5</span><button class="btn btn-sm btn-ghost" data-action="${S.user.role==='admin'?'logout':'show-login'}" style="color:#7386a5">${S.user.role==='admin'?'Đăng xuất':'Quản trị'}</button></div></header>
   <div class="content">${S.view==='directory'?directoryView():S.view==='results'?resultsView():adminView()}
   <div class="fine-print">Phiếu bình chọn phản ánh cảm nhận chủ quan, không phải thông tin xác minh hay kết luận chính thức. Không sử dụng kết quả để bôi nhọ, quy chụp hoặc phát tán thông tin cá nhân.</div></div></main></div>
 ${S.selected?detailModal():''}${S.editLeader!==null?leaderModal():''}${S.peekLeader?commentPeekModal():''}`;
@@ -354,7 +361,7 @@ function adminCommentsView(){
  const tabs=[['all','Tất cả'],['pending','Chờ duyệt'],['approved','Đã công khai'],['hidden','Đã ẩn'],['rejected','Đã bị xóa']];
  return `<div class="card-panel"><div class="section-head"><div><h3>Quản lý tất cả bình luận</h3><p>Hiển thị đầy đủ cả bình luận đã công khai, chưa duyệt, bị ẩn và đã bị xóa. Bình luận bị xóa vẫn lưu để đối chiếu.</p></div><span class="badge-status">${fnum(list.length)} bình luận</span></div>
  <div class="etdp-comment-tabs" role="group" aria-label="Lọc trạng thái bình luận">${tabs.map(([key,title])=>`<button type="button" class="etdp-comment-tab ${filter===key?'active':''}" data-action="admin-comments-filter" data-value="${key}" aria-pressed="${filter===key}">${title} <b>${fnum(counts[key])}</b></button>`).join('')}</div>
- <div class="moderation-list">${filteredComments.length?filteredComments.map(c=>`<div class="moderation-item"><div class="moderation-head"><strong>${icon('people',15)} Bình luận cho: ${e(c.leader_name)} <small>(Mã ${e(c.leader_id)})</small></strong><span class="mod-status status-${e(c.status)}">${COMMENT_STATES[c.status]||e(c.status)}</span></div><div class="muted micro">${e(c.area)} · ${e(c.ward)} · ${dateText(c.created_at)} ${c.reports?' · '+c.reports+' báo cáo':''}</div><p class="moderation-text">${e(c.body)}</p><div class="moderation-actions">${adminCommentButtons(c,c.leader_name)}</div></div>`).join(''):'<div class="notice">Không có bình luận ở trạng thái này.</div>'}</div></div>`;
+ <div class="moderation-list">${filteredComments.length?filteredComments.map(c=>`<div class="moderation-item"><div class="moderation-head"><strong>${icon('people',15)} Bình luận cho: ${e(c.leader_name)} <small>(Mã ${e(c.leader_id)})</small></strong><span class="mod-status status-${e(c.status)}">${COMMENT_STATES[c.status]||e(c.status)}</span></div><div class="muted micro">${e(c.area)} · ${e(c.ward)} · ${dateText(c.created_at)} ${c.reports?' · '+c.reports+' báo cáo':''}</div><p class="moderation-text">${e(c.body)}</p><div class="etdp-ip-admin"><div class="etdp-ip-heading"><strong>IP người gửi:</strong> <code>${c.author_ip?e(c.author_ip):'Chưa có dữ liệu IP'}</code></div>${c.author_ip?`<div class="etdp-ip-row"><label class="sr-only" for="ip-label-${e(c.id)}">Nhãn nội bộ cho IP ${e(c.author_ip)}</label><input id="ip-label-${e(c.id)}" maxlength="80" autocomplete="off" value="${e(c.author_label||'')}" placeholder="Gán nhãn nội bộ (chưa xác minh danh tính)"/><button type="button" class="btn btn-sm btn-outline" data-action="save-ip-label" data-ip="${e(c.author_ip)}">Lưu nhãn</button></div><small>Chỉ quản trị viên được xem · Nhãn không xác thực danh tính người gửi</small>`:`<small>Chỉ những bình luận tạo sau khi cập nhật V7.5 mới có thể ghi IP.</small>`}</div><div class="moderation-actions">${adminCommentButtons(c,c.leader_name)}</div></div>`).join(''):'<div class="notice">Không có bình luận ở trạng thái này.</div>'}</div></div>`;
 }
 function importPanel(){const preview=S.importResult;
 return `<div class="excel-panel"><div class="excel-heading"><div><h4>Nhập danh sách tổ trưởng từ Excel</h4><p>Tải danh sách đang có về sửa hoặc lấy mẫu trống. Xem trước thay đổi rồi mới lưu vào Supabase.</p></div><div class="btn-row"><button class="btn btn-outline btn-sm" data-action="excel-blank">${icon('download',15)} Tải mẫu trống</button><button class="btn btn-outline btn-sm" data-action="excel-current">${icon('download',15)} Tải danh sách hiện tại</button></div></div><form id="excel-import-form"><label class="excel-upload"><span>${icon('upload',22)} Chọn file .xlsx</span><input type="file" id="excel-file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required></label><button class="btn btn-primary" type="submit">Xem trước dữ liệu</button></form><p class="micro muted">Tối đa 500 dòng/lần, file không quá 2 MB. Cột Mã tổ trưởng dùng để cập nhật đúng người, tránh mất kết quả Vote.</p>
@@ -388,7 +395,7 @@ function detailModal(){
  <div class="journey-help"><span>🍀 Bác tổ trưởng trong trò chơi là nhân vật hoạt hình hư cấu.</span><span>🔐 Mỗi phiên ẩn danh chỉ có <b>1 phiếu đã khóa</b> cho mỗi tổ trưởng.</span></div>`:`<div class="notice">Vui lòng mở phiên bình chọn để tham gia.</div>`}
  </section><aside class="vote-insights"><div class="profile-section-head"><span class="eyebrow">02 / KẾT QUẢ</span><h3>Ý kiến cộng đồng</h3><p>${fnum(x.votes)} phiếu đã ghi nhận</p></div>${x.revealed&&x.votes?LABELS.map((l,i)=>`<div class="result-row"><div><div class="title"><span>${e(l)}</span><span>${fnum(counts[i])} phiếu</span></div><div class="bar"><span style="width:${counts[i]*100/x.votes}%;background:${COLORS[i]}"></span></div></div><div class="percent">${percent(counts[i],x.votes)}%</div></div>`).join(''):`<div class="notice orange">${x.votes===0?'Chưa có lượt bình chọn.':'Chỉ công bố tỷ lệ khi đủ ít nhất 3 phiếu.'}</div>`}
  <div class="profile-section-head"><span class="eyebrow">03 / BÌNH LUẬN ẨN DANH</span><h3>Góc chia sẻ</h3><p>Chỉ gửi bình luận sau khi phiếu đã được xác nhận; mọi bình luận đều qua kiểm duyệt.</p></div>
- ${canComment?`<form id="comment-form" class="comment-compose"><div class="comment-compose-top"><span class="anon-avatar">${icon('shield',16)}</span><div><strong>Người bình luận ẩn danh</strong><small>Không hiển thị danh tính công khai</small></div></div><textarea id="comment-text" name="body" required minlength="5" maxlength="700" rows="4" placeholder="Chia sẻ một trải nghiệm cụ thể, lịch sự…">${e(S.commentDraft)}</textarea><div class="compose-foot"><small><span id="comment-length">${S.commentDraft.length}</span>/700 ký tự</small><button class="btn btn-primary btn-sm" type="submit">Gửi chờ duyệt</button></div></form>`:`<div class="notice">🔒 ${['voter','admin'].includes(S.user.role)?'Hãy chọn mức trải nghiệm và xác nhận để gửi bình luận.':'Chỉ người đã có phiên bình chọn mới có thể gửi bình luận.'}</div>`}
+ ${canComment?`<form id="comment-form" class="comment-compose"><div class="comment-compose-top"><span class="anon-avatar">${icon('shield',16)}</span><div><strong>Người bình luận ẩn danh</strong><small>Không hiển thị danh tính công khai</small></div></div><textarea id="comment-text" name="body" required minlength="5" maxlength="700" rows="4" placeholder="Chia sẻ một trải nghiệm cụ thể, lịch sự…" ${S.commentSubmitting?'disabled':''}>${e(S.commentDraft)}</textarea><label class="etdp-privacy-ack"><input id="comment-privacy-ack" type="checkbox" required ${S.commentSubmitting?'disabled':''}/><span>Tôi đồng ý hệ thống ghi nhận địa chỉ IP để chống lạm dụng và hỗ trợ kiểm duyệt. IP và nhãn nội bộ chỉ quản trị viên được xem; không xuất hiện cùng bình luận công khai.</span></label><div class="compose-foot"><small><span id="comment-length">${S.commentDraft.length}</span>/700 ký tự · Bình luận chờ kiểm duyệt</small><button class="btn btn-primary btn-sm etdp-send-btn" type="submit" ${S.commentSubmitting?'disabled':''}>${S.commentSubmitting?'Đang gửi…':'Gửi'}</button></div></form>`:`<div class="notice">🔒 ${['voter','admin'].includes(S.user.role)?'Hãy chọn mức trải nghiệm và xác nhận để gửi bình luận.':'Chỉ người đã có phiên bình chọn mới có thể gửi bình luận.'}</div>`}
  <div id="leader-comments-panel" class="etdp-comments-panel" tabindex="-1" data-comment-leader="${e(x.id)}"><div class="comment-owner"><strong>${icon('people',17)} Bình luận dành riêng cho: ${e(x.name)}</strong><small>${e(x.area)} · ${e(wardName(x.ward))} · Mã ${e(x.id)}</small></div><div class="comment-list-head"><h4>${S.user.role==='admin'?'Tất cả bình luận của tổ trưởng này':'Nội dung bình luận đã duyệt'}</h4><span>${S.user.role==='admin'?`${fnum(commentList.length)} bình luận · ${fnum(commentTotal)} công khai`:`${fnum(commentTotal)} công khai`}</span></div><div class="comment-list" aria-live="polite">${commentItems(x.id)}</div></div><div class="safe-comment-note">Nhận xét là cảm nhận chủ quan. Không đăng số điện thoại, thông tin cá nhân hoặc nội dung xúc phạm.</div></aside></div></div></div>`;
 }
 function commentPeekModal(){
@@ -501,6 +508,15 @@ if(act==='admin-comments-filter'){
  if(S.user.role!=='admin')return;
  S.adminCommentFilter=b.dataset.value;render();return;
 }
+if(act==='save-ip-label'){
+ if(S.user.role!=='admin')throw Error('Chỉ quản trị viên được gán nhãn IP.');
+ const ip=b.dataset.ip;
+ const input=b.closest('.etdp-ip-admin')?.querySelector('input');
+ const label=(input?.value||'').trim();
+ const result=await req('/api/admin/ip-labels','PUT',{ip,label});
+ for(const c of S.adminComments){if(c.author_ip===ip)c.author_label=result.label;}
+ render();showToast('Đã lưu nhãn IP nội bộ; khách truy cập không nhìn thấy.');return;
+}
 if(act==='admin-delete-comment'){
  if(S.user.role!=='admin')throw Error('Chỉ quản trị viên được xóa bình luận.');
  const id=b.dataset.id;
@@ -527,7 +543,7 @@ if(act==='nav'){S.view=b.dataset.value;S.mobileNav=false;if(S.view==='admin')awa
 if(act==='logout'){await req('/api/logout','POST',{});const r=await req('/api/me');S.user=r.user||GUEST;S.selected=null;clearLeaderComments();S.editLeader=null;await loadMain();render();return;}
 if(act==='voted-only'){S.votedOnly=!S.votedOnly;render();return;}
 if(act==='read-comments'){const target=document.getElementById('leader-comments-panel');if(target){target.scrollIntoView({behavior:'smooth',block:'start'});target.focus({preventScroll:true});}return;}
-if(act==='details'){closePeek();const id=b.dataset.id;S.selected=id;S.draftVote=S.leaders.find(l=>l.id===id)?.my_vote??null;S.pendingLevel=null;S.commentDraft='';clearLeaderComments();renderDialogOnly();try{if(await loadComments(id))renderDialogOnly();}catch(err){if(S.selected===id)showToast(err.message);}return;}
+if(act==='details'){S.commentSubmitting=false;closePeek();const id=b.dataset.id;S.selected=id;S.draftVote=S.leaders.find(l=>l.id===id)?.my_vote??null;S.pendingLevel=null;S.commentDraft='';clearLeaderComments();renderDialogOnly();try{if(await loadComments(id))renderDialogOnly();}catch(err){if(S.selected===id)showToast(err.message);}return;}
 if(act==='close-modal'){closePeek();S.selected=null;S.editLeader=null;S.pendingLevel=null;clearLeaderComments();renderDialogOnly();return;}
 if(act==='close-bg'){if(ev.target===b){S.selected=null;S.editLeader=null;S.pendingLevel=null;clearLeaderComments();renderDialogOnly();}return;}
 if(act==='choose'){
@@ -597,6 +613,7 @@ app.addEventListener('click',onClick);
 app.addEventListener('input',ev=>{if(ev.target.id==='search'){S.q=ev.target.value;S.listLimit=80;rerenderCards();const node=document.getElementById('featured-contact');if(node)node.innerHTML=featuredContact();}
   if(ev.target.id==='comment-text'){S.commentDraft=ev.target.value;const counter=document.getElementById('comment-length');if(counter)counter.textContent=S.commentDraft.length;}});
 app.addEventListener('change',ev=>{
+ if(ev.target.id==='theme-select'){setTheme(ev.target.value);return;}
  if(ev.target.id==='ward-list-check'){
   if(ev.target.checked&&!S.ward){ev.target.checked=false;showToast('Hãy chọn một phường trước khi bật danh sách.');return;}
   S.showWardList=ev.target.checked;S.listLimit=80;rerenderCards();return;
@@ -616,9 +633,34 @@ app.addEventListener('submit',async ev=>{
       S.user=resp.user;S.loginError='';S.view='directory';await loadMain();if(S.user.role==='admin')await loadAdmin();render();showToast('Đăng nhập thành công.');return;
     }
     if(form.id==='comment-form'){
-      const lid=S.selected;
-      await req('/api/comments','POST',{leader_id:lid,body:S.commentDraft});
-      S.commentDraft='';await loadComments(lid);await loadMain();render();showToast('Đã gửi bình luận ẩn danh. Nội dung sẽ hiển thị sau khi được duyệt.');return;
+      // One request and one local UI update. No three extra API requests on success.
+      if(S.commentSubmitting)return;
+      const lid=S.selected,body=S.commentDraft.trim();
+      const ack=form.querySelector('#comment-privacy-ack');
+      if(!ack?.checked)throw Error('Vui lòng xác nhận đã đọc thông tin về địa chỉ IP.');
+      const sendBtn=form.querySelector('button[type="submit"]');
+      S.commentSubmitting=true;
+      if(sendBtn){sendBtn.disabled=true;sendBtn.setAttribute('aria-busy','true');sendBtn.textContent='Đang gửi…';}
+      try{
+        const saved=await req('/api/comments','POST',{leader_id:lid,body,privacy_ack:true});
+        S.commentDraft='';
+        if(S.commentOwner===lid&&S.selected===lid){
+          S.comments.unshift({id:saved.id,leader_id:lid,body,status:'pending',created_at:new Date().toISOString(),is_mine:true});
+          // Update only this comment list — keep map, game and profile in place.
+          const items=document.querySelector('#leader-comments-panel .comment-list');
+          if(items)items.innerHTML=commentItems(lid);
+        }
+        if(S.selected===lid){
+          const area=form.querySelector('#comment-text');if(area)area.value='';
+          const counter=form.querySelector('#comment-length');if(counter)counter.textContent='0';
+        }
+        showToast('Đã gửi. Bình luận đang chờ quản trị viên duyệt.');
+      }catch(err){showToast(err.message);}
+      finally{
+        S.commentSubmitting=false;
+        if(sendBtn?.isConnected){sendBtn.disabled=false;sendBtn.removeAttribute('aria-busy');sendBtn.textContent='Gửi';}
+      }
+      return;
     }
     if(form.id==='excel-import-form'){const file=document.getElementById('excel-file')?.files?.[0];if(!file)throw Error('Hãy chọn file Excel .xlsx.');const body=new FormData();body.append('file',file);body.append('mode','preview');const result=await uploadExcel(body);S.importFile=file;S.importResult=result;render();showToast('Đã kiểm tra '+result.total+' dòng; chưa ghi thay đổi.');return;}
     if(form.id==='leader-form'){
@@ -631,6 +673,7 @@ app.addEventListener('submit',async ev=>{
 });
 window.addEventListener('keydown',ev=>{if(ev.key==='Escape'&&S.peekLeader){closePeek();return;}if(ev.key==='Escape'&&S.mobileNav){S.mobileNav=false;render();return;}if(ev.key==='Escape'&&(S.selected||S.editLeader!==null)){S.selected=null;S.editLeader=null;clearLeaderComments();renderDialogOnly();}});
 try{S.sidebarCollapsed=localStorage.getItem('etdp-sidebar')==='1';}catch(_){}
+try{setTheme(localStorage.getItem('etdp-theme')||'ocean');}catch(_){setTheme('ocean');}
 window.addEventListener('resize',()=>requestAnimationFrame(positionMapLabels));
 bootstrap();
 
