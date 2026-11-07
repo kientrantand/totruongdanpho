@@ -482,3 +482,39 @@ button,a{touch-action:manipulation}
  .etdp-phone-num{font-size:1.7rem}
 }
 @media(prefers-reduced-motion:reduce){.sidebar,.shell,.etdp-call-btn,.etdp-copy-btn,.etdp-search-submit,.etdp-list-ward,.etdp-mini-call{transition:none!important}}
+
+/* E-TDP v7.1: Apple-style native system typography and accessible comments.
+   SF Pro is the system face on Apple devices; never distribute proprietary fonts. */
+:root{--etdp-system-font:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,"Segoe UI","Helvetica Neue",Arial,sans-serif}
+html,body,#app,#app *,button,input,select,textarea{
+  font-family:var(--etdp-system-font)!important;
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+}
+#app h1,#app h2,#app h3,#app h4,#app .page-title,#app .brand-mark{letter-spacing:-.025em}
+#app .comment-text,#app .moderation-text{font-size:.94rem;line-height:1.72;color:#263b55;white-space:pre-wrap;overflow-wrap:anywhere}
+#app .profile-read-comments{display:inline-flex;align-items:center;gap:8px;border:1px solid rgba(255,255,255,.48);color:#fff;background:rgba(255,255,255,.22);border-radius:11px;padding:9px 13px;cursor:pointer;font-size:.83rem;font-weight:700;transition:background .15s ease,transform .15s ease}
+#app .profile-read-comments:hover{background:rgba(255,255,255,.34);transform:translateY(-1px)}
+#app .profile-read-comments:focus-visible{outline:3px solid #fff;outline-offset:2px}
+#app .v5-profile{overscroll-behavior:contain;scroll-behavior:smooth}
+#app .vote-insights{max-height:none;overflow:visible}
+#app .comment-list{max-height:none;overflow:visible}
+#app .etdp-comments-panel{scroll-margin-top:18px;background:#f9fbff;border:1px solid #dbe6f4;border-radius:16px;padding:13px 16px;margin:18px -5px 6px}
+#app .etdp-comments-panel:focus{outline:none}
+#app .etdp-comments-panel:focus-visible{outline:2px solid #3c72d9;outline-offset:3px}
+#app .etdp-comments-panel .comment-item{padding:16px 4px}
+#app .comment-tools{flex-wrap:wrap;gap:8px;justify-content:flex-end;margin-top:10px}
+#app .comment-tools button{background:#eef3fc;color:#2452a0;border:1px solid #d7e4f7;border-radius:8px;padding:6px 10px;cursor:pointer;font-weight:650}
+#app .comment-tools button:hover{background:#dfebff}
+#app .comment-tools button:disabled{opacity:.48;cursor:default}
+#app .comment-pending{white-space:nowrap}
+#app .comment-status-approved{background:#e3f8eb;color:#147540}
+#app .comment-status-rejected{background:#feecee;color:#a83443}
+#app .comment-status-hidden{background:#fff3dc;color:#986719}
+#app .profile-metrics{align-items:center}
+@media(max-width:600px){
+ #app .profile-read-comments{min-height:40px;width:100%;justify-content:center}
+ #app .etdp-comments-panel{padding:10px 12px;margin:16px 0 6px}
+ #app .comment-list-head{flex-wrap:wrap}
+}
+@media(prefers-reduced-motion:reduce){#app .profile-read-comments,#app .v5-profile{transition:none;scroll-behavior:auto}}

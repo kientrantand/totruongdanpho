@@ -1,4 +1,4 @@
-"""E-TDP V6.1: Flask API + Supabase PostgreSQL; phiếu xác nhận khóa một lần.
+"""E-TDP V7.1: Flask API + Supabase PostgreSQL; bình luận công khai và quản trị đầy đủ.
 
 Dữ liệu trong schema app, mọi thao tác ghi qua backend. Không có mật khẩu trong repo.
 """
@@ -370,8 +370,8 @@ def checked_leader(lid):
 @protected(write=True)
 def vote():
     user = require()
-    if user['role']!='voter':
-        return fail('Quản trị viên không tham gia bình chọn.',403)
+    if user['role'] not in ('voter', 'admin'):
+        return fail('Phiên truy cập không hợp lệ.',403)
     data = payload()
     level = data.get('level')
     if type(level) is not int or level not in (1,2,3,4):
@@ -407,18 +407,28 @@ def iso_row(row, *keys):
 
 
 def comments_response(user):
+    """Everyone reads approved text. Moderators additionally read every status.
+
+    Anonymous visitors see their own pending comments, never those of others.
+    Administrator moderation never exposes participant identity to the client.
+    """
     lid = checked_leader(request.args.get('leader_id'))
-    if user:
-        rows=query('''SELECT c.id,c.body,c.status,c.created_at,
+    if user and user['role'] == 'admin':
+        rows = query('''SELECT id,body,status,created_at,FALSE AS is_mine
+                    FROM app.comments WHERE leader_id=%s
+                    ORDER BY id DESC LIMIT 500''', (lid,))
+    elif user:
+        rows = query('''SELECT c.id,c.body,c.status,c.created_at,
             (c.participant_id=%s) AS is_mine FROM app.comments c
             WHERE c.leader_id=%s AND (c.status='approved' OR c.participant_id=%s)
-            ORDER BY id DESC LIMIT 100''', (user['id'],lid,user['id']))
+            ORDER BY id DESC LIMIT 200''', (user['id'],lid,user['id']))
     else:
-        rows=query('''SELECT id,body,status,created_at,FALSE as is_mine
+        rows = query('''SELECT id,body,status,created_at,FALSE as is_mine
                FROM app.comments WHERE leader_id=%s AND status='approved'
-               ORDER BY id DESC LIMIT 100''', (lid,))
-    n=scalar("SELECT count(*) FROM app.comments WHERE leader_id=%s AND status='approved'",(lid,))
-    return jsonify(comments=[iso_row(r,'created_at') for r in rows],total_approved=n)
+               ORDER BY id DESC LIMIT 200''', (lid,))
+    n = scalar("SELECT count(*) FROM app.comments WHERE leader_id=%s AND status='approved'",(lid,))
+    return jsonify(comments=[iso_row(r,'created_at') for r in rows],
+                   total_approved=n, total_visible=len(rows))
 
 
 @app.get('/api/public/comments')
@@ -436,8 +446,8 @@ def comments():
 @protected(write=True)
 def comment():
     user=require()
-    if user['role']!='voter':
-        return fail('Quản trị viên không thể gửi đánh giá ẩn danh.',403)
+    if user['role'] not in ('voter', 'admin'):
+        return fail('Phiên truy cập không hợp lệ.',403)
     data=payload()
     lid=checked_leader(data.get('leader_id'))
     # Bắt buộc có phiếu trong PostgreSQL; không tin trạng thái giao diện.
@@ -480,8 +490,8 @@ def remove_comment(cid):
 @protected(write=True)
 def report(cid):
     user=require()
-    if user['role']!='voter':
-        return fail('Quản trị viên không gửi báo cáo.',403)
+    if user['role'] not in ('voter', 'admin'):
+        return fail('Phiên truy cập không hợp lệ.',403)
     c=query('SELECT participant_id,status FROM app.comments WHERE id=%s',(cid,),one=True)
     if not c or c['status']!='approved':
         return fail('Bình luận đã không còn công khai.',404)
